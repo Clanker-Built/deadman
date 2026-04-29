@@ -58,16 +58,16 @@ func GetAdminOverview(ctx context.Context, q Querier) (*AdminOverviewStats, erro
 
 // AdminUserRow is a compact per-user view for the admin user list.
 type AdminUserRow struct {
-	ID           uuid.UUID
-	Email        string
-	DisplayName  string
-	Status       string
-	IsAdmin      bool
-	CreatedAt    time.Time
-	PolicyCount  int
-	ArmedCount   int
-	BundleCount  int
-	BundleBytes  int64
+	ID          uuid.UUID
+	Email       string
+	DisplayName string
+	Status      string
+	IsAdmin     bool
+	CreatedAt   time.Time
+	PolicyCount int
+	ArmedCount  int
+	BundleCount int
+	BundleBytes int64
 }
 
 func ListAdminUsers(ctx context.Context, q Querier, limit, offset int) ([]AdminUserRow, error) {

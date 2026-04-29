@@ -32,11 +32,11 @@ const StepUpWindow = 5 * time.Minute
 
 // Deps bundles what admin routes need from the rest of the server.
 type Deps struct {
-	Logger   *slog.Logger
-	Store    *store.Store
-	Auth     *auth.Service
-	Ledger   *audit.Ledger
-	DevMode  bool
+	Logger  *slog.Logger
+	Store   *store.Store
+	Auth    *auth.Service
+	Ledger  *audit.Ledger
+	DevMode bool
 }
 
 // ctxKey is unique to this package.

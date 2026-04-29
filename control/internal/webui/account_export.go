@@ -67,17 +67,17 @@ func buildUserExport(ctx context.Context, s *store.Store, userID uuid.UUID) ([]b
 	bs := make([]map[string]any, 0, len(bundles))
 	for _, b := range bundles {
 		bs = append(bs, map[string]any{
-			"id":                  b.ID,
-			"label":               b.Label,
-			"version":             b.Version,
-			"wrap_scheme":         b.WrapScheme,
-			"primary_uri":         b.PrimaryURI,
-			"backup_uri":          b.BackupURI,
-			"size_bytes":          b.SizeBytes,
+			"id":                    b.ID,
+			"label":                 b.Label,
+			"version":               b.Version,
+			"wrap_scheme":           b.WrapScheme,
+			"primary_uri":           b.PrimaryURI,
+			"backup_uri":            b.BackupURI,
+			"size_bytes":            b.SizeBytes,
 			"ciphertext_sha256_hex": hex.EncodeToString(b.CiphertextSHA256),
 			"manifest_hash_hex":     hex.EncodeToString(b.ManifestHash),
-			"created_at":          b.CreatedAt,
-			"deleted_at":          b.DeletedAt,
+			"created_at":            b.CreatedAt,
+			"deleted_at":            b.DeletedAt,
 		})
 	}
 	out["content_bundles_metadata"] = bs

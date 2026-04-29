@@ -38,11 +38,11 @@ import (
 // by user ID. Lives only in process memory; on restart users in-flight have
 // to start setup over. That's fine — TOTP setup is a one-time operation.
 type pendingTOTP struct {
-	UserID uuid.UUID
-	Secret string // base32, no padding
-	Codes  []string // plaintext recovery codes, shown once
+	UserID      uuid.UUID
+	Secret      string   // base32, no padding
+	Codes       []string // plaintext recovery codes, shown once
 	HashedCodes []string
-	Created time.Time
+	Created     time.Time
 }
 
 type pendingStore struct {
@@ -51,9 +51,9 @@ type pendingStore struct {
 
 func newPendingStore() *pendingStore { return &pendingStore{m: make(map[uuid.UUID]*pendingTOTP)} }
 
-func (p *pendingStore) put(s *pendingTOTP) { p.m[s.UserID] = s }
+func (p *pendingStore) put(s *pendingTOTP)            { p.m[s.UserID] = s }
 func (p *pendingStore) get(id uuid.UUID) *pendingTOTP { return p.m[id] }
-func (p *pendingStore) drop(id uuid.UUID) { delete(p.m, id) }
+func (p *pendingStore) drop(id uuid.UUID)             { delete(p.m, id) }
 
 // authHandlers is the bundle of state that the auth POST handlers need.
 type authHandlers struct {
@@ -64,22 +64,6 @@ type authHandlers struct {
 	pending             *pendingStore
 	bootstrapAdminEmail string
 	rpDisplayName       string
-}
-
-// mountAuthHandlers attaches passphrase+TOTP routes. Caller mounts
-// these BEFORE the session-protected group so /ui/register and /ui/login
-// are reachable without a session.
-//
-// Note: TOTP setup pages live at /ui/auth/totp/setup and require an
-// authenticated session (just-registered or already-logged-in user).
-func (h *authHandlers) mountPublic(reg func(method, pat string, handler http.HandlerFunc)) {
-	reg("POST", "/ui/register", h.postRegister)
-	reg("POST", "/ui/login", h.postLogin)
-}
-
-func (h *authHandlers) mountSessionProtected(reg func(method, pat string, handler http.HandlerFunc)) {
-	reg("GET", "/ui/auth/totp/setup", h.getTOTPSetup)
-	reg("POST", "/ui/auth/totp/setup", h.postTOTPSetup)
 }
 
 func (h *authHandlers) postRegister(w http.ResponseWriter, req *http.Request) {
@@ -212,10 +196,10 @@ func (h *authHandlers) getTOTPSetup(w http.ResponseWriter, req *http.Request) {
 
 	uri := auth.TOTPProvisioningURI(pend.Secret, u.Email, h.rpDisplayName)
 	h.rend.render(w, req, "totp_setup", PageData{
-		Title:        "Set up two-factor",
-		UserEmail:    u.Email,
-		TOTPSecret:   pend.Secret,
-		TOTPURI:      uri,
+		Title:         "Set up two-factor",
+		UserEmail:     u.Email,
+		TOTPSecret:    pend.Secret,
+		TOTPURI:       uri,
 		RecoveryCodes: pend.Codes,
 	})
 }

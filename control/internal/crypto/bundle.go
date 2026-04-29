@@ -23,9 +23,9 @@ type BundleCiphertext struct {
 // construction. The recipient policy's long-term X25519 public key is the
 // KEM target; the sender generates an ephemeral keypair per wrap.
 type WrappedKey struct {
-	Scheme            string `json:"scheme"`
-	EphemeralPublic   [32]byte `json:"ephemeral_public"`
-	Ciphertext        []byte `json:"ciphertext"` // nonce || sealed DEK
+	Scheme          string   `json:"scheme"`
+	EphemeralPublic [32]byte `json:"ephemeral_public"`
+	Ciphertext      []byte   `json:"ciphertext"` // nonce || sealed DEK
 }
 
 var hkdfBundleWrapInfo = []byte("deadman/bundle-wrap/v1")

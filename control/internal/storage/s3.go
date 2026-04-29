@@ -152,7 +152,7 @@ func (c *Client) HeadSHA256(ctx context.Context, key string) ([32]byte, int64, e
 	if err != nil {
 		return h, 0, err
 	}
-	defer body.Close()
+	defer func() { _ = body.Close() }()
 	hasher := newSHA256()
 	n, err := io.Copy(hasher, body)
 	if err != nil {
@@ -164,8 +164,8 @@ func (c *Client) HeadSHA256(ctx context.Context, key string) ([32]byte, int64, e
 
 // WriteResult is returned by DualWriter.Put.
 type WriteResult struct {
-	PrimaryURI string
-	BackupURI  string
+	PrimaryURI  string
+	BackupURI   string
 	PrimaryETag string
 	BackupETag  string
 	BackupErr   error

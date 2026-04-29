@@ -42,8 +42,8 @@ type Deps struct {
 	DevMode       bool
 
 	// Admin enables the /ui/admin/* surface when non-nil.
-	Admin       *admin.Deps
-	AdminMount  *admin.MountConfig
+	Admin      *admin.Deps
+	AdminMount *admin.MountConfig
 
 	// Metrics: when non-nil, every request is recorded to this registry.
 	Metrics *metrics.Registry
@@ -101,7 +101,7 @@ func NewRouterWithDeps(d Deps) http.Handler {
 			writeJSON(w, http.StatusOK, map[string]string{"pong": "true"})
 		})
 		if pub, ok := d.ReleasePubKey.(*rsaPubKey); ok && pub != nil {
-			mountReleaseKeyRoute(r, (*rsa.PublicKey)(pub))
+			mountReleaseKeyRoute(r, pub)
 		}
 		if d.Auth != nil {
 			mountAuthRoutes(r, d.Logger, d.Auth)

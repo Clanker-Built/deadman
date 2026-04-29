@@ -20,7 +20,6 @@ import (
 	"github.com/gcottrell/deadman/control/internal/store"
 )
 
-
 // Clock is injectable so tests can run whole lifecycles in ms.
 type Clock interface {
 	Now() time.Time
@@ -74,18 +73,18 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*store.Policy, *s
 		canon := canonicalizePolicy(in, p.ID, 1, s.Clock.Now())
 		hash := crypto.SHA256(canon)
 		v, e = store.CreatePolicyVersion(ctx, q, &store.PolicyVersion{
-			PolicyID:              p.ID,
-			IntervalDays:          in.IntervalDays,
-			GracePeriodHours:      in.GracePeriodHours,
-			HoldPeriodHours:       in.HoldPeriodHours,
-			WarningSchedule:       json.RawMessage(`[]`),
-			CheckInRequirements:   json.RawMessage(`{}`),
-			ReleaseMode:           in.ReleaseMode,
-			DestinationIDs:        emptyIfNil(in.DestinationIDs),
-			ContentBundleIDs:      emptyIfNil(in.BundleIDs),
-			EffectiveAt:           s.Clock.Now(),
-			UserSignature:         in.UserSignature,
-			CanonicalHash:         hash[:],
+			PolicyID:            p.ID,
+			IntervalDays:        in.IntervalDays,
+			GracePeriodHours:    in.GracePeriodHours,
+			HoldPeriodHours:     in.HoldPeriodHours,
+			WarningSchedule:     json.RawMessage(`[]`),
+			CheckInRequirements: json.RawMessage(`{}`),
+			ReleaseMode:         in.ReleaseMode,
+			DestinationIDs:      emptyIfNil(in.DestinationIDs),
+			ContentBundleIDs:    emptyIfNil(in.BundleIDs),
+			EffectiveAt:         s.Clock.Now(),
+			UserSignature:       in.UserSignature,
+			CanonicalHash:       hash[:],
 		})
 		if e != nil {
 			return e
@@ -188,18 +187,18 @@ func (s *Service) UpdateAttachments(ctx context.Context, userID, policyID uuid.U
 		canon := canonicalizePolicy(in, policyID, prev.Version+1, s.Clock.Now())
 		hash := crypto.SHA256(canon)
 		v, err := store.CreatePolicyVersion(ctx, q, &store.PolicyVersion{
-			PolicyID:              policyID,
-			IntervalDays:          in.IntervalDays,
-			GracePeriodHours:      in.GracePeriodHours,
-			HoldPeriodHours:       in.HoldPeriodHours,
-			WarningSchedule:       prev.WarningSchedule,
-			CheckInRequirements:   prev.CheckInRequirements,
-			ReleaseMode:           in.ReleaseMode,
-			DestinationIDs:        emptyIfNil(destIDs),
-			ContentBundleIDs:      emptyIfNil(bundleIDs),
-			EffectiveAt:           s.Clock.Now(),
-			UserSignature:         make([]byte, 64), // placeholder until client-side signing
-			CanonicalHash:         hash[:],
+			PolicyID:            policyID,
+			IntervalDays:        in.IntervalDays,
+			GracePeriodHours:    in.GracePeriodHours,
+			HoldPeriodHours:     in.HoldPeriodHours,
+			WarningSchedule:     prev.WarningSchedule,
+			CheckInRequirements: prev.CheckInRequirements,
+			ReleaseMode:         in.ReleaseMode,
+			DestinationIDs:      emptyIfNil(destIDs),
+			ContentBundleIDs:    emptyIfNil(bundleIDs),
+			EffectiveAt:         s.Clock.Now(),
+			UserSignature:       make([]byte, 64), // placeholder until client-side signing
+			CanonicalHash:       hash[:],
 		})
 		if err != nil {
 			return err
@@ -211,8 +210,8 @@ func (s *Service) UpdateAttachments(ctx context.Context, userID, policyID uuid.U
 			SubjectKind: "policy",
 			SubjectID:   &policyID,
 			Payload: map[string]any{
-				"new_version":     v.Version,
-				"bundle_count":    len(bundleIDs),
+				"new_version":       v.Version,
+				"bundle_count":      len(bundleIDs),
 				"destination_count": len(destIDs),
 			},
 		})
@@ -355,11 +354,11 @@ func (s *Service) apply(ctx context.Context, userID, policyID uuid.UUID, ev stat
 			SubjectKind: "policy",
 			SubjectID:   &policyID,
 			Payload: map[string]any{
-				"from":      p.State,
-				"to":        string(result.Runtime.State),
-				"event":     string(ev.Kind),
-				"epoch":     newPS.Epoch,
-				"effects":   effectNames(result.Effects),
+				"from":       p.State,
+				"to":         string(result.Runtime.State),
+				"event":      string(ev.Kind),
+				"epoch":      newPS.Epoch,
+				"effects":    effectNames(result.Effects),
 				"trigger_at": result.Runtime.TriggerAt,
 			},
 		})

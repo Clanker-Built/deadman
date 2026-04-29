@@ -133,22 +133,22 @@ type PageData struct {
 
 // AdminView bundles fields for admin pages so PageData stays manageable.
 type AdminView struct {
-	Overview       *store.AdminOverviewStats
-	Users          []store.AdminUserRow
-	SelectedUser   *store.User
-	UserPolicies   []PolicyRow
-	UserBundles    []BundleRow
-	UserDestCount  int
-	AllPolicies    []AdminPolicyRowView
-	VaultStatus    *VaultStatusView
-	NextURL        string
-	Settings       *store.ServerSettings
-	SchedulerTick  *time.Time
+	Overview      *store.AdminOverviewStats
+	Users         []store.AdminUserRow
+	SelectedUser  *store.User
+	UserPolicies  []PolicyRow
+	UserBundles   []BundleRow
+	UserDestCount int
+	AllPolicies   []AdminPolicyRowView
+	VaultStatus   *VaultStatusView
+	NextURL       string
+	Settings      *store.ServerSettings
+	SchedulerTick *time.Time
 
 	// Ledger page.
-	Ledger      []AuditRow
+	Ledger       []AuditRow
 	LedgerFilter LedgerFilterView
-	ChainStatus string // "" | "ok" | error description
+	ChainStatus  string // "" | "ok" | error description
 
 	// Storage page.
 	StorageMetrics   *store.StorageMetrics
@@ -163,24 +163,24 @@ type AdminView struct {
 	ReleaseThroughput []MetricsReleaseRow
 
 	// Backups page.
-	Backups           []BackupRowView
-	BackupKeep        int
-	BackupCanRun      bool
-	BackupPgDumpOK    bool
+	Backups        []BackupRowView
+	BackupKeep     int
+	BackupCanRun   bool
+	BackupPgDumpOK bool
 }
 
 // BackupRowView renders one admin_backups row.
 type BackupRowView struct {
-	ID         string
-	Started    string
-	Finished   string
-	SizeHuman  string
-	SHA256Hex  string
-	Status     string
-	Error      string
-	Bucket     string
-	Key        string
-	ActorID    string
+	ID        string
+	Started   string
+	Finished  string
+	SizeHuman string
+	SHA256Hex string
+	Status    string
+	Error     string
+	Bucket    string
+	Key       string
+	ActorID   string
 }
 
 // MetricsSnapView is the admin-rendered copy of metrics.Snapshot.
@@ -267,8 +267,8 @@ type AdminPolicyRowView struct {
 
 // VaultStatusView is the operator-facing vault state snapshot.
 type VaultStatusView struct {
-	Unlocked            bool
-	HasVault            bool
+	Unlocked             bool
+	HasVault             bool
 	Share3FingerprintHex string
 }
 
@@ -527,7 +527,7 @@ func MountWithConfig(r chi.Router, logger *slog.Logger, s *store.Store, authSvc 
 			if confirm != u.Email {
 				rend.render(w, req, "account", PageData{
 					Title: "Your account", UserEmail: u.Email,
-					Flash: "Email confirmation did not match. No changes made.",
+					Flash:     "Email confirmation did not match. No changes made.",
 					FlashKind: "error",
 				})
 				return

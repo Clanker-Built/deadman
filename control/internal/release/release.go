@@ -1,16 +1,16 @@
 // Package release is the post-trigger pipeline:
 //
-//   1. Detect policies in state 'triggered' with no active release transaction
-//      at the current epoch → create one.
-//   2. Unseal: fetch bundle ciphertext + wrapped key from object storage, use
-//      the server release private key to recover the DEK, AEAD-decrypt the
-//      payload. Happens entirely in the release worker's memory.
-//   3. Package: write a landing page (HTML), the decrypted payload, a
-//      manifest, SHA-256 checksums, and a detached Ed25519 signature to
-//      primary object storage under a stable release slug.
-//   4. Notify destinations: public_page returns the URL; webhook POSTs a
-//      signed JSON with manifest hash + URL.
-//   5. Advance the state machine: release_started → release_finished.
+//  1. Detect policies in state 'triggered' with no active release transaction
+//     at the current epoch → create one.
+//  2. Unseal: fetch bundle ciphertext + wrapped key from object storage, use
+//     the server release private key to recover the DEK, AEAD-decrypt the
+//     payload. Happens entirely in the release worker's memory.
+//  3. Package: write a landing page (HTML), the decrypted payload, a
+//     manifest, SHA-256 checksums, and a detached Ed25519 signature to
+//     primary object storage under a stable release slug.
+//  4. Notify destinations: public_page returns the URL; webhook POSTs a
+//     signed JSON with manifest hash + URL.
+//  5. Advance the state machine: release_started → release_finished.
 //
 // Idempotency: keyed on (policy_id, epoch). If we crash mid-publish, the
 // next tick resumes based on release_transactions.state.
@@ -70,9 +70,9 @@ type Worker struct {
 	// Mail resolves the current mailer each delivery. nil disables email
 	// destinations. The resolver lets admin SMTP-config changes take effect
 	// without a restart.
-	Mail MailResolver
-	Logger        *slog.Logger
-	HTTP          *http.Client
+	Mail   MailResolver
+	Logger *slog.Logger
+	HTTP   *http.Client
 }
 
 // New constructs a Worker with a sane HTTP client if one is not supplied.
@@ -176,10 +176,7 @@ func (w *Worker) runOne(ctx context.Context, rt store.ReleaseTransaction) error 
 	// Package.
 	_ = store.UpdateReleaseState(ctx, w.Store.Pool, rt.ID, "packaging")
 	slug := releaseSlug(rt.ID)
-	manifest, landing, packagedErr := w.packageRelease(rt, *pv, payloads, bundleMeta, slug)
-	if packagedErr != nil {
-		return fmt.Errorf("package: %w", packagedErr)
-	}
+	manifest, landing := w.packageRelease(rt, *pv, payloads, bundleMeta, slug)
 
 	// Publish.
 	_ = store.UpdateReleaseState(ctx, w.Store.Pool, rt.ID, "publishing")
@@ -228,9 +225,9 @@ func (w *Worker) runOne(ctx context.Context, rt store.ReleaseTransaction) error 
 		SubjectKind: "policy",
 		SubjectID:   &rt.PolicyID,
 		Payload: map[string]any{
-			"release_id": rt.ID,
-			"public_url": publicURL,
-			"all_ok":     allOK,
+			"release_id":    rt.ID,
+			"public_url":    publicURL,
+			"all_ok":        allOK,
 			"manifest_hash": hex.EncodeToString(sha256BytesLen(manifestJSON)),
 		},
 	})
@@ -249,7 +246,7 @@ func (w *Worker) unseal(ctx context.Context, b *store.ContentBundle) ([]byte, er
 	if err != nil {
 		return nil, err
 	}
-	defer body.Close()
+	defer func() { _ = body.Close() }()
 	ct, err := io.ReadAll(body)
 	if err != nil {
 		return nil, err
@@ -279,14 +276,14 @@ func objectKey(uri string) string {
 }
 
 type manifestT struct {
-	ReleaseID      uuid.UUID         `json:"release_id"`
-	PolicyID       uuid.UUID         `json:"policy_id"`
-	VersionID      uuid.UUID         `json:"version_id"`
-	Epoch          int64             `json:"epoch"`
-	ReleasedAt     time.Time         `json:"released_at"`
-	ReleaseMode    string            `json:"release_mode"`
-	Bundles        []manifestBundle  `json:"bundles"`
-	ServicePubKey  string            `json:"service_pubkey_b64"` // base64-raw-url
+	ReleaseID     uuid.UUID        `json:"release_id"`
+	PolicyID      uuid.UUID        `json:"policy_id"`
+	VersionID     uuid.UUID        `json:"version_id"`
+	Epoch         int64            `json:"epoch"`
+	ReleasedAt    time.Time        `json:"released_at"`
+	ReleaseMode   string           `json:"release_mode"`
+	Bundles       []manifestBundle `json:"bundles"`
+	ServicePubKey string           `json:"service_pubkey_b64"` // base64-raw-url
 }
 
 type manifestBundle struct {
@@ -297,7 +294,7 @@ type manifestBundle struct {
 	Filename  string    `json:"filename"`
 }
 
-func (w *Worker) packageRelease(rt store.ReleaseTransaction, pv store.PolicyVersion, payloads map[uuid.UUID][]byte, meta map[uuid.UUID]store.ContentBundle, slug string) (manifestT, []byte, error) {
+func (w *Worker) packageRelease(rt store.ReleaseTransaction, pv store.PolicyVersion, payloads map[uuid.UUID][]byte, meta map[uuid.UUID]store.ContentBundle, slug string) (manifestT, []byte) {
 	m := manifestT{
 		ReleaseID:     rt.ID,
 		PolicyID:      rt.PolicyID,
@@ -318,7 +315,7 @@ func (w *Worker) packageRelease(rt store.ReleaseTransaction, pv store.PolicyVers
 		})
 	}
 	landing := renderLanding(slug, m)
-	return m, landing, nil
+	return m, landing
 }
 
 func (w *Worker) publish(ctx context.Context, slug string, payloads map[uuid.UUID][]byte, meta map[uuid.UUID]store.ContentBundle, m manifestT, landing []byte) (string, error) {
@@ -418,7 +415,7 @@ func (w *Worker) deliver(ctx context.Context, d *store.Destination, publicURL st
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			return fmt.Errorf("webhook status %d", resp.StatusCode)
 		}

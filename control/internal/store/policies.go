@@ -22,21 +22,21 @@ type Policy struct {
 }
 
 type PolicyVersion struct {
-	ID                    uuid.UUID
-	PolicyID              uuid.UUID
-	Version               int
-	IntervalDays          int
-	GracePeriodHours      int
-	HoldPeriodHours       int
-	WarningSchedule       json.RawMessage
-	CheckInRequirements   json.RawMessage
-	ReleaseMode           string
-	DestinationIDs        []uuid.UUID
-	ContentBundleIDs      []uuid.UUID
-	EffectiveAt           time.Time
-	UserSignature         []byte
-	CanonicalHash         []byte
-	CreatedAt             time.Time
+	ID                  uuid.UUID
+	PolicyID            uuid.UUID
+	Version             int
+	IntervalDays        int
+	GracePeriodHours    int
+	HoldPeriodHours     int
+	WarningSchedule     json.RawMessage
+	CheckInRequirements json.RawMessage
+	ReleaseMode         string
+	DestinationIDs      []uuid.UUID
+	ContentBundleIDs    []uuid.UUID
+	EffectiveAt         time.Time
+	UserSignature       []byte
+	CanonicalHash       []byte
+	CreatedAt           time.Time
 }
 
 type PolicyState struct {

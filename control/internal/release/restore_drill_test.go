@@ -115,11 +115,10 @@ func TestRestoreDrillPrimaryOutage(t *testing.T) {
 			ManifestHash: mh[:], Manifest: manifest,
 			WrappedBundleKey: wrapped, WrapScheme: crypto.SchemeRSAOAEPAESGCM,
 			PrimaryURI: wr.PrimaryURI, BackupURI: &wr.BackupURI,
-			SizeBytes: int64(len(ct)),
+			SizeBytes:        int64(len(ct)),
 			CiphertextSHA256: (func() []byte { h := crypto.SHA256(ct); return h[:] })(),
 		}
-		_, e := insertBundleWithID(ctx, q, b)
-		if e != nil {
+		if e := insertBundleWithID(ctx, q, b); e != nil {
 			return e
 		}
 		backupURIStr := wr.BackupURI

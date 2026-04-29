@@ -135,10 +135,10 @@ func mountBundleRoutes(r chi.Router, logger *slog.Logger, s *store.Store, authSv
 					SubjectKind: "bundle",
 					SubjectID:   &id,
 					Payload: map[string]any{
-						"size_bytes":   len(ct),
-						"wrap_scheme":  body.WrapScheme,
-						"primary_uri":  wr.PrimaryURI,
-						"backup_ok":    wr.BackupURI != "",
+						"size_bytes":        len(ct),
+						"wrap_scheme":       body.WrapScheme,
+						"primary_uri":       wr.PrimaryURI,
+						"backup_ok":         wr.BackupURI != "",
 						"ciphertext_sha256": base64.RawURLEncoding.EncodeToString(digest[:]),
 					},
 				})

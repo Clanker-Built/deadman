@@ -54,20 +54,20 @@ import (
 // its passphrase to unwrap, and two shares to reconstruct).
 type VaultFile struct {
 	Version           int    `json:"version"`
-	PubKeyPKIX        []byte `json:"pubkey_pkix"`          // subjectPublicKeyInfo
-	Share1Wrapped     []byte `json:"share1_wrapped"`       // nonce||ct||tag
-	Share1Salt        []byte `json:"share1_salt"`          // Argon2id salt
-	Share1Params      KDFP   `json:"share1_kdf"`           // Argon2id params
+	PubKeyPKIX        []byte `json:"pubkey_pkix"`    // subjectPublicKeyInfo
+	Share1Wrapped     []byte `json:"share1_wrapped"` // nonce||ct||tag
+	Share1Salt        []byte `json:"share1_salt"`    // Argon2id salt
+	Share1Params      KDFP   `json:"share1_kdf"`     // Argon2id params
 	Share2Wrapped     []byte `json:"share2_wrapped"`
 	Share2Salt        []byte `json:"share2_salt"`
 	Share2Params      KDFP   `json:"share2_kdf"`
-	Share3Fingerprint []byte `json:"share3_fingerprint"`   // SHA-256 of share3 for verification at recovery time; share3 itself NOT stored
+	Share3Fingerprint []byte `json:"share3_fingerprint"` // SHA-256 of share3 for verification at recovery time; share3 itself NOT stored
 }
 
 // KDFP is the Argon2id parameter bundle.
 type KDFP struct {
 	Time    uint32 `json:"t"`
-	Memory  uint32 `json:"m"`       // KiB
+	Memory  uint32 `json:"m"` // KiB
 	Threads uint8  `json:"threads"`
 	KeyLen  uint32 `json:"keylen"`
 }

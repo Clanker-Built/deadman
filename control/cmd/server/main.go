@@ -202,10 +202,10 @@ func main() {
 			DevMode: cfg.Env == "dev",
 		}
 		adminMount := &admin.MountConfig{
-			VaultFile:  adminVF,
-			Locker:     adminLocker,
-			Policy:     polSvc,
-			Renderer:   rend,
+			VaultFile:    adminVF,
+			Locker:       adminLocker,
+			Policy:       polSvc,
+			Renderer:     rend,
 			ServicePub:   pub,
 			Storage:      deps.Storage,
 			MailResolver: mailResolver,

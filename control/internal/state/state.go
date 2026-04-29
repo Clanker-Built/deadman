@@ -71,14 +71,14 @@ type Policy struct {
 
 // Runtime is the mutable state the machine reads and writes.
 type Runtime struct {
-	State           State
-	ArmedAt         *time.Time
-	LastCheckInAt   *time.Time
-	NextDueAt       *time.Time
-	GraceExpiresAt  *time.Time
-	HoldExpiresAt   *time.Time
-	TriggerAt       *time.Time
-	Epoch           int64
+	State          State
+	ArmedAt        *time.Time
+	LastCheckInAt  *time.Time
+	NextDueAt      *time.Time
+	GraceExpiresAt *time.Time
+	HoldExpiresAt  *time.Time
+	TriggerAt      *time.Time
+	Epoch          int64
 }
 
 // Effect is a side-effect the machine wants the caller to perform. The
@@ -91,14 +91,14 @@ type Effect struct {
 type EffectKind string
 
 const (
-	EffectSendWarning       EffectKind = "send_warning"
-	EffectSendOverdue       EffectKind = "send_overdue"
-	EffectStartRelease      EffectKind = "start_release"
-	EffectNotifyHold        EffectKind = "notify_hold"
-	EffectNotifyResume      EffectKind = "notify_resume"
-	EffectNotifyRevoked     EffectKind = "notify_revoked"
-	EffectNotifySuspended   EffectKind = "notify_suspended"
-	EffectAuditStateChange  EffectKind = "audit_state_change"
+	EffectSendWarning      EffectKind = "send_warning"
+	EffectSendOverdue      EffectKind = "send_overdue"
+	EffectStartRelease     EffectKind = "start_release"
+	EffectNotifyHold       EffectKind = "notify_hold"
+	EffectNotifyResume     EffectKind = "notify_resume"
+	EffectNotifyRevoked    EffectKind = "notify_revoked"
+	EffectNotifySuspended  EffectKind = "notify_suspended"
+	EffectAuditStateChange EffectKind = "audit_state_change"
 )
 
 // Result bundles the outcome of Evaluate.

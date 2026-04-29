@@ -72,8 +72,8 @@ func Load() (*Config, error) {
 		S3SecretKey:       os.Getenv("DEADMAN_S3_SECRET_KEY"),
 		S3PathStyle:       getenv("DEADMAN_S3_PATH_STYLE", "true") == "true",
 
-		TLSCertFile:    os.Getenv("DEADMAN_TLS_CERT"),
-		TLSKeyFile:     os.Getenv("DEADMAN_TLS_KEY"),
+		TLSCertFile:            os.Getenv("DEADMAN_TLS_CERT"),
+		TLSKeyFile:             os.Getenv("DEADMAN_TLS_KEY"),
 		ReleaseKeyPath:         getenv("DEADMAN_RELEASE_KEY_PATH", "./release-key.pem"),
 		VaultPath:              getenv("DEADMAN_VAULT_PATH", "./release-vault.json"),
 		VaultPassA:             os.Getenv("DEADMAN_VAULT_PASSPHRASE_A"),

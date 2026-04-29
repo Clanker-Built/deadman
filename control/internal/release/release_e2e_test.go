@@ -31,7 +31,7 @@ type fakeClock struct {
 	t  time.Time
 }
 
-func (c *fakeClock) Now() time.Time        { c.mu.Lock(); defer c.mu.Unlock(); return c.t }
+func (c *fakeClock) Now() time.Time          { c.mu.Lock(); defer c.mu.Unlock(); return c.t }
 func (c *fakeClock) Advance(d time.Duration) { c.mu.Lock(); c.t = c.t.Add(d); c.mu.Unlock() }
 
 // TestReleaseEndToEnd: arm a policy with a bundle + a webhook destination,
@@ -62,7 +62,7 @@ func TestReleaseEndToEnd(t *testing.T) {
 	// Object storage (single bucket for tests; backup reuses primary).
 	primary, err := storage.New(ctx, storage.Config{
 		Endpoint: minioURL, Region: "us-east-1",
-		Bucket: "deadman-e2e-" + uuid.NewString()[:8],
+		Bucket:      "deadman-e2e-" + uuid.NewString()[:8],
 		AccessKeyID: s3Key, SecretAccessKey: s3Secret, PathStyle: true,
 	})
 	if err != nil {
@@ -137,14 +137,13 @@ func TestReleaseEndToEnd(t *testing.T) {
 	err = s.InTx(ctx, func(ctx context.Context, q store.Querier) error {
 		b := &store.ContentBundle{
 			ID: bundleID, UserID: userID, Version: 1,
-			Label: "e2e-bundle",
+			Label:        "e2e-bundle",
 			ManifestHash: manifestHash[:], Manifest: manifest,
 			WrappedBundleKey: wrapped, WrapScheme: crypto.SchemeRSAOAEPAESGCM,
 			PrimaryURI: primary.URI(objKey), SizeBytes: int64(len(ct)),
 			CiphertextSHA256: (func() []byte { h := crypto.SHA256(ct); return h[:] })(),
 		}
-		_, e := insertBundleWithID(ctx, q, b)
-		if e != nil {
+		if e := insertBundleWithID(ctx, q, b); e != nil {
 			return e
 		}
 		cfg, _ := json.Marshal(map[string]string{"url": wh.URL})
@@ -302,18 +301,14 @@ func findReleaseID(ctx context.Context, t *testing.T, s *store.Store, policyID u
 
 // insertBundleWithID is a test-local copy so we can specify the ID explicitly
 // (keeping the object-storage key and DB row in sync).
-func insertBundleWithID(ctx context.Context, q store.Querier, b *store.ContentBundle) (*store.ContentBundle, error) {
-	var out store.ContentBundle
-	err := q.QueryRow(ctx,
+func insertBundleWithID(ctx context.Context, q store.Querier, b *store.ContentBundle) error {
+	_, err := q.Exec(ctx,
 		`INSERT INTO content_bundles
 		   (id, user_id, version, label, manifest_hash, manifest, wrapped_bundle_key, wrap_scheme,
 		    primary_uri, backup_uri, size_bytes, ciphertext_sha256)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-		 RETURNING id, user_id, version, label, manifest_hash, manifest, wrapped_bundle_key, wrap_scheme,
-		           primary_uri, backup_uri, size_bytes, ciphertext_sha256, created_at, deleted_at`,
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
 		b.ID, b.UserID, b.Version, b.Label, b.ManifestHash, b.Manifest, b.WrappedBundleKey, b.WrapScheme,
 		b.PrimaryURI, b.BackupURI, b.SizeBytes, b.CiphertextSHA256,
-	).Scan(&out.ID, &out.UserID, &out.Version, &out.Label, &out.ManifestHash, &out.Manifest, &out.WrappedBundleKey, &out.WrapScheme,
-		&out.PrimaryURI, &out.BackupURI, &out.SizeBytes, &out.CiphertextSHA256, &out.CreatedAt, &out.DeletedAt)
-	return &out, err
+	)
+	return err
 }

@@ -84,20 +84,20 @@ func (r *Registry) Event(kind string) {
 // Snapshot is a copy of all metrics for rendering. Safe to ship to the
 // admin template; never reference the internal histograms directly.
 type Snapshot struct {
-	Routes    []RouteStat
-	Counters  map[string]int64
-	Rates     map[string]EventRate // keyed by kind
+	Routes     []RouteStat
+	Counters   map[string]int64
+	Rates      map[string]EventRate // keyed by kind
 	CapturedAt time.Time
 }
 
 // RouteStat is per-route aggregate.
 type RouteStat struct {
-	Route   string
-	Count   int64
-	P50ms   int64
-	P95ms   int64
-	P99ms   int64
-	MaxMs   int64
+	Route string
+	Count int64
+	P50ms int64
+	P95ms int64
+	P99ms int64
+	MaxMs int64
 }
 
 // EventRate summarizes events-per-minute over several windows.
@@ -211,10 +211,10 @@ func (h *histogram) percentiles() pct {
 // ringBuf stores event timestamps. countSince scans back until it hits the
 // cutoff; O(N) in the worst case but N is bounded by capacity.
 type ringBuf struct {
-	ts       []time.Time
-	cap      int
-	next     int
-	total_   int64
+	ts    []time.Time
+	cap   int
+	next  int
+	count int64
 }
 
 func newRingBuf(capacity int) *ringBuf {
@@ -222,7 +222,7 @@ func newRingBuf(capacity int) *ringBuf {
 }
 
 func (r *ringBuf) push(t time.Time) {
-	r.total_++
+	r.count++
 	if len(r.ts) < r.cap {
 		r.ts = append(r.ts, t)
 		return
@@ -241,4 +241,4 @@ func (r *ringBuf) countSince(cutoff time.Time) int64 {
 	return n
 }
 
-func (r *ringBuf) total() int64 { return r.total_ }
+func (r *ringBuf) total() int64 { return r.count }

@@ -104,7 +104,7 @@ func TestCheckinFullFlow(t *testing.T) {
 		"nickname":      "pixel-test",
 		"device_pubkey": base64.RawURLEncoding.EncodeToString(devPub),
 	})
-	resp := doReal(t, server.URL+"/api/v1/devices/", "POST", cookie, enrollBody)
+	resp := doReal(t, server.URL+"/api/v1/devices/", cookie, enrollBody)
 	defer resp.Close()
 	if resp.Status() != 201 {
 		t.Fatalf("enroll: status %d body=%s", resp.Status(), resp.Body())
@@ -120,7 +120,7 @@ func TestCheckinFullFlow(t *testing.T) {
 
 	// 2. Request a nonce.
 	nonceReq, _ := json.Marshal(map[string]string{"device_id": deviceID})
-	nResp := doReal(t, server.URL+"/api/v1/checkin/nonce", "POST", cookie, nonceReq)
+	nResp := doReal(t, server.URL+"/api/v1/checkin/nonce", cookie, nonceReq)
 	defer nResp.Close()
 	if nResp.Status() != 200 {
 		t.Fatalf("nonce: status %d body=%s", nResp.Status(), nResp.Body())
@@ -147,7 +147,7 @@ func TestCheckinFullFlow(t *testing.T) {
 		"counter":   counter,
 		"signature": base64.RawURLEncoding.EncodeToString(sig),
 	})
-	vResp := doReal(t, server.URL+"/api/v1/checkin/verify", "POST", cookie, verifyBody)
+	vResp := doReal(t, server.URL+"/api/v1/checkin/verify", cookie, verifyBody)
 	defer vResp.Close()
 	if vResp.Status() != 200 {
 		t.Fatalf("verify: status %d body=%s", vResp.Status(), vResp.Body())
@@ -166,7 +166,7 @@ func TestCheckinFullFlow(t *testing.T) {
 	}
 
 	// 5. Replay the same nonce — must be rejected.
-	rResp := doReal(t, server.URL+"/api/v1/checkin/verify", "POST", cookie, verifyBody)
+	rResp := doReal(t, server.URL+"/api/v1/checkin/verify", cookie, verifyBody)
 	defer rResp.Close()
 	if rResp.Status() == 200 {
 		t.Fatalf("replay accepted: body=%s", rResp.Body())
@@ -181,13 +181,13 @@ type doResp struct {
 	closer func()
 }
 
-func (r *doResp) Status() int    { return r.status }
-func (r *doResp) Body() string   { return r.body }
-func (r *doResp) Close()         { r.closer() }
+func (r *doResp) Status() int  { return r.status }
+func (r *doResp) Body() string { return r.body }
+func (r *doResp) Close()       { r.closer() }
 
-func doReal(t *testing.T, url, method, cookie string, body []byte) *doResp {
+func doReal(t *testing.T, url, cookie string, body []byte) *doResp {
 	t.Helper()
-	req, err := http.NewRequest(method, url, bytes.NewReader(body))
+	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}

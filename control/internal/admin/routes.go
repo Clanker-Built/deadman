@@ -61,13 +61,13 @@ type MountConfig struct {
 // EffectiveStartupConfig holds the env-derived fields the admin config page
 // shows as the current live state. Populated from cfg at server start.
 type EffectiveStartupConfig struct {
-	SMTPHost           string
-	SMTPPort           int
-	SMTPUsername       string
-	SMTPFrom           string
-	SMTPInsecureSkip   bool
-	SMTPPasswordIsSet  bool
-	PublicBaseURL      string
+	SMTPHost          string
+	SMTPPort          int
+	SMTPUsername      string
+	SMTPFrom          string
+	SMTPInsecureSkip  bool
+	SMTPPasswordIsSet bool
+	PublicBaseURL     string
 }
 
 // Mount attaches the admin routes under /ui/admin/. All routes (except
@@ -858,20 +858,10 @@ func effectiveConfigView(mc MountConfig, s *store.ServerSettings) *webui.Effecti
 		v.SMTPPasswordMask = "(unset)"
 	}
 	// Has the DB diverged from env? If so, surface restart-required warning.
-	changed := false
-	if s.SMTPHost != nil && *s.SMTPHost != e.SMTPHost {
-		changed = true
-	}
-	if s.SMTPPort != nil && *s.SMTPPort != e.SMTPPort {
-		changed = true
-	}
-	if s.SMTPFrom != nil && *s.SMTPFrom != e.SMTPFrom {
-		changed = true
-	}
-	if s.PublicBaseURL != nil && *s.PublicBaseURL != e.PublicBaseURL {
-		changed = true
-	}
-	v.RestartRequired = changed
+	v.RestartRequired = (s.SMTPHost != nil && *s.SMTPHost != e.SMTPHost) ||
+		(s.SMTPPort != nil && *s.SMTPPort != e.SMTPPort) ||
+		(s.SMTPFrom != nil && *s.SMTPFrom != e.SMTPFrom) ||
+		(s.PublicBaseURL != nil && *s.PublicBaseURL != e.PublicBaseURL)
 	return v
 }
 
@@ -1004,4 +994,3 @@ func humanDelta(d time.Duration) string {
 		return fmt.Sprintf("%s%dm", pref, m)
 	}
 }
-

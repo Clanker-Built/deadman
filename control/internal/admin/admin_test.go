@@ -41,7 +41,7 @@ func requireDB(t *testing.T) *store.Store {
 	return s
 }
 
-func newTestDeps(t *testing.T, s *store.Store) (*Deps, *auth.Service) {
+func newTestDeps(t *testing.T, s *store.Store) *Deps {
 	t.Helper()
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -59,7 +59,7 @@ func newTestDeps(t *testing.T, s *store.Store) (*Deps, *auth.Service) {
 		Logger: slog.New(slog.NewTextHandler(os.Stderr, nil)),
 		Store:  s, Auth: authSvc, Ledger: ledger,
 	}
-	return d, authSvc
+	return d
 }
 
 // makeUserWithSession inserts a user (admin or not) and a session for them.
@@ -133,7 +133,7 @@ func runMW(t *testing.T, d *Deps, cookie string, target string) *httptest.Respon
 
 func TestRequireAdmin_NoSession_RedirectsToLogin(t *testing.T) {
 	s := requireDB(t)
-	d, _ := newTestDeps(t, s)
+	d := newTestDeps(t, s)
 	rec := runMW(t, d, "", "/ui/admin/")
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("want 303, got %d", rec.Code)
@@ -145,8 +145,8 @@ func TestRequireAdmin_NoSession_RedirectsToLogin(t *testing.T) {
 
 func TestRequireAdmin_NonAdmin_404s(t *testing.T) {
 	s := requireDB(t)
-	d, _ := newTestDeps(t, s)
-	_, cookie := makeUserWithSession(t, s, /*isAdmin=*/ false, 0)
+	d := newTestDeps(t, s)
+	_, cookie := makeUserWithSession(t, s /*isAdmin=*/, false, 0)
 	rec := runMW(t, d, cookie, "/ui/admin/")
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("want 404 (do not leak admin surface), got %d", rec.Code)
@@ -155,7 +155,7 @@ func TestRequireAdmin_NonAdmin_404s(t *testing.T) {
 
 func TestRequireAdmin_StaleStepUp_RedirectsToReauth(t *testing.T) {
 	s := requireDB(t)
-	d, _ := newTestDeps(t, s)
+	d := newTestDeps(t, s)
 	_, cookie := makeUserWithSession(t, s, true, StepUpWindow+time.Minute)
 	rec := runMW(t, d, cookie, "/ui/admin/users")
 	if rec.Code != http.StatusSeeOther {
@@ -169,7 +169,7 @@ func TestRequireAdmin_StaleStepUp_RedirectsToReauth(t *testing.T) {
 
 func TestRequireAdmin_FreshAdmin_PassesThrough(t *testing.T) {
 	s := requireDB(t)
-	d, _ := newTestDeps(t, s)
+	d := newTestDeps(t, s)
 	_, cookie := makeUserWithSession(t, s, true, 0)
 	rec := runMW(t, d, cookie, "/ui/admin/")
 	if rec.Code != http.StatusTeapot {
@@ -179,7 +179,7 @@ func TestRequireAdmin_FreshAdmin_PassesThrough(t *testing.T) {
 
 func TestAuditAdminAction_AppendsToLedger(t *testing.T) {
 	s := requireDB(t)
-	d, _ := newTestDeps(t, s)
+	d := newTestDeps(t, s)
 	uid, _ := makeUserWithSession(t, s, true, 0)
 
 	d.AuditAdminAction(context.Background(), uid, "admin.test_event", "user", &uid,

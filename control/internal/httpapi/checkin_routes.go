@@ -22,7 +22,7 @@ import (
 
 type verifyReq struct {
 	DeviceID  string `json:"device_id"`
-	Nonce     string `json:"nonce"`     // base64url
+	Nonce     string `json:"nonce"` // base64url
 	Counter   int64  `json:"counter"`
 	Signature string `json:"signature"` // base64url
 }
@@ -139,8 +139,8 @@ func mountCheckinRoutes(r chi.Router, logger *slog.Logger, s *store.Store, authS
 				advanced = n
 			}
 			writeJSON(w, http.StatusOK, map[string]any{
-				"status":             "ok",
-				"policies_advanced":  advanced,
+				"status":            "ok",
+				"policies_advanced": advanced,
 			})
 		})
 	})

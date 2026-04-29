@@ -47,12 +47,12 @@ type KeyProvider interface {
 
 // SMTPDBRow is the raw settings row. All pointers to make absence explicit.
 type SMTPDBRow struct {
-	Host             *string
-	Port             *int
-	Username         *string
-	PasswordWrapped  []byte
-	From             *string
-	InsecureSkip     *bool
+	Host            *string
+	Port            *int
+	Username        *string
+	PasswordWrapped []byte
+	From            *string
+	InsecureSkip    *bool
 }
 
 // NewResolver returns a resolver with 30-second caching.

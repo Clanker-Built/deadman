@@ -22,7 +22,13 @@ linters:
   settings:
     gosec:
       excludes:
-        - G104
+        - G104  # ignored errors (too noisy pre-M1)
+        - G115  # int conversions — argon2 params, TOTP step, varint sizes are all bounded
+        - G118  # context.Background in goroutines — release/audit workers intentionally outlive request scope
+        - G120  # ParseForm without MaxBytesReader — known gap, tracked in SECURITY.md
+        - G204  # exec with operator-supplied args (pg_dump uses operator DATABASE_URL)
+        - G304  # file inclusion via variable — paths come from operator config (vault, signing key, etc.)
+        - G505  # crypto/sha1 — RFC 6238 TOTP mandates HMAC-SHA1; SHA-1 is not used as a hash here
     revive:
       rules:
         - name: var-naming

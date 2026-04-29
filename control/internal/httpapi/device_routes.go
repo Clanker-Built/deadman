@@ -23,7 +23,7 @@ import (
 const TrustDelay = 24 * time.Hour
 
 type enrollReq struct {
-	Platform      string `json:"platform"`      // "android" | "ios"
+	Platform      string `json:"platform"` // "android" | "ios"
 	Nickname      string `json:"nickname"`
 	DevicePubKey  string `json:"device_pubkey"` // base64-raw-url Ed25519 public key
 	Attestation   string `json:"attestation,omitempty"`

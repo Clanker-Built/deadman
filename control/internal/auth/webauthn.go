@@ -299,7 +299,6 @@ func (s *Service) FinishLogin(ctx context.Context, email, sessionID string, resp
 	return u.ID, err
 }
 
-
 // WriteJSON helper for ceremony responses.
 func WriteJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")

@@ -56,7 +56,7 @@ func initOrLoadVault(_ context.Context, logger *slog.Logger, cfg *config.Config)
 				"For a fresh install set both env vars; the server will generate a " +
 				"new vault and print the offline recovery share (share 3) once. " +
 				"Record it out-of-band, then optionally unset the passphrases for " +
-				"interactive startup on subsequent boots (not yet supported — M5+).")
+				"interactive startup on subsequent boots (not yet supported — M5+)")
 	}
 
 	vf, share3, err := keyvault.Generate(cfg.VaultPassA, cfg.VaultPassB)

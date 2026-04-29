@@ -10,20 +10,20 @@ import (
 )
 
 type ContentBundle struct {
-	ID                uuid.UUID
-	UserID            uuid.UUID
-	Version           int
-	Label             string
-	ManifestHash      []byte
-	Manifest          []byte
-	WrappedBundleKey  []byte
-	WrapScheme        string
-	PrimaryURI        string
-	BackupURI         *string
-	SizeBytes         int64
-	CiphertextSHA256  []byte
-	CreatedAt         time.Time
-	DeletedAt         *time.Time
+	ID               uuid.UUID
+	UserID           uuid.UUID
+	Version          int
+	Label            string
+	ManifestHash     []byte
+	Manifest         []byte
+	WrappedBundleKey []byte
+	WrapScheme       string
+	PrimaryURI       string
+	BackupURI        *string
+	SizeBytes        int64
+	CiphertextSHA256 []byte
+	CreatedAt        time.Time
+	DeletedAt        *time.Time
 }
 
 func InsertBundle(ctx context.Context, q Querier, b *ContentBundle) (*ContentBundle, error) {

@@ -11,18 +11,18 @@ import (
 )
 
 type Destination struct {
-	ID              uuid.UUID
-	UserID          uuid.UUID
-	Kind            string
-	Label           string
-	Config          json.RawMessage
-	EncryptedToken  []byte
-	TokenScheme     *string
-	TokenExpiresAt  *time.Time
-	LastVerifiedAt  *time.Time
-	EffectiveAt     time.Time
-	RevokedAt       *time.Time
-	CreatedAt       time.Time
+	ID             uuid.UUID
+	UserID         uuid.UUID
+	Kind           string
+	Label          string
+	Config         json.RawMessage
+	EncryptedToken []byte
+	TokenScheme    *string
+	TokenExpiresAt *time.Time
+	LastVerifiedAt *time.Time
+	EffectiveAt    time.Time
+	RevokedAt      *time.Time
+	CreatedAt      time.Time
 }
 
 func CreateDestination(ctx context.Context, q Querier, d *Destination) (*Destination, error) {

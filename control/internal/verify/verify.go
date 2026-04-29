@@ -32,12 +32,12 @@ import (
 )
 
 type Worker struct {
-	Store        *store.Store
-	Primary      *storage.Client
-	Backup       *storage.Client
-	Ledger       *audit.Ledger
-	Logger       *slog.Logger
-	BatchSize    int
+	Store     *store.Store
+	Primary   *storage.Client
+	Backup    *storage.Client
+	Ledger    *audit.Ledger
+	Logger    *slog.Logger
+	BatchSize int
 	// StaleAfter selects bundles not verified in at least this duration.
 	// 0 means verify every tick regardless (useful for tests).
 	StaleAfter time.Duration
@@ -112,15 +112,15 @@ func (w *Worker) verifyOne(ctx context.Context, b store.ContentBundle) error {
 		return errors.New("verify: bundle has no storage URIs")
 	}
 
-	pHash, _, pErr := storageHash(ctx, w.Primary, primaryKey)
-	bHash, _, bErr := storageHash(ctx, w.Backup, backupKey)
+	pHash, pErr := storageHash(ctx, w.Primary, primaryKey)
+	bHash, bErr := storageHash(ctx, w.Backup, backupKey)
 
 	var kind string
 	payload := map[string]any{
-		"bundle_id":           b.ID,
-		"canonical_sha256":    hex.EncodeToString(b.CiphertextSHA256),
-		"primary_error":       errString(pErr),
-		"backup_error":        errString(bErr),
+		"bundle_id":        b.ID,
+		"canonical_sha256": hex.EncodeToString(b.CiphertextSHA256),
+		"primary_error":    errString(pErr),
+		"backup_error":     errString(bErr),
 	}
 	switch {
 	case pErr != nil && bErr != nil:
@@ -158,11 +158,12 @@ func (w *Worker) verifyOne(ctx context.Context, b store.ContentBundle) error {
 	return err
 }
 
-func storageHash(ctx context.Context, c *storage.Client, key string) ([32]byte, int64, error) {
+func storageHash(ctx context.Context, c *storage.Client, key string) ([32]byte, error) {
 	if c == nil || key == "" {
-		return [32]byte{}, 0, errors.New("client or key missing")
+		return [32]byte{}, errors.New("client or key missing")
 	}
-	return c.HeadSHA256(ctx, key)
+	h, _, err := c.HeadSHA256(ctx, key)
+	return h, err
 }
 
 // keyFromURI parses s3://bucket/path/to/key → path/to/key.
