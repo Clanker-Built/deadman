@@ -1,3 +1,5 @@
+version: "2"
+
 run:
   timeout: 5m
   tests: true
@@ -11,26 +13,27 @@ linters:
     - unused
     - gosec
     - revive
-    - gofmt
-    - goimports
     - misspell
     - unconvert
     - unparam
     - bodyclose
     - nilerr
     - wastedassign
-
-linters-settings:
-  gosec:
-    excludes:
-      - G104  # too noisy pre-M1
-  revive:
+  settings:
+    gosec:
+      excludes:
+        - G104
+    revive:
+      rules:
+        - name: var-naming
+        - name: exported
+          disabled: true
+  exclusions:
     rules:
-      - name: var-naming
-      - name: exported
-        disabled: true
+      - path: _test\.go
+        linters: [gosec, errcheck]
 
-issues:
-  exclude-rules:
-    - path: _test\.go
-      linters: [gosec, errcheck]
+formatters:
+  enable:
+    - gofmt
+    - goimports
