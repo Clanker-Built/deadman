@@ -1,0 +1,136 @@
+package store
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+)
+
+type ReleaseTransaction struct {
+	ID               uuid.UUID
+	PolicyID         uuid.UUID
+	PolicyVersionID  uuid.UUID
+	Epoch            int64
+	State            string
+	StartedAt        time.Time
+	CompletedAt      *time.Time
+	Manifest         json.RawMessage
+	ServiceSignature []byte
+}
+
+// CreateOrGetReleaseTransaction inserts a pending release_transactions row
+// for (policy_id, epoch) or returns the existing row. Idempotent.
+func CreateOrGetReleaseTransaction(ctx context.Context, q Querier, policyID, versionID uuid.UUID, epoch int64) (*ReleaseTransaction, bool, error) {
+	var rt ReleaseTransaction
+	err := q.QueryRow(ctx,
+		`INSERT INTO release_transactions (policy_id, policy_version_id, epoch, state)
+		 VALUES ($1, $2, $3, 'pending')
+		 ON CONFLICT (policy_id, epoch) DO NOTHING
+		 RETURNING id, policy_id, policy_version_id, epoch, state, started_at, completed_at, manifest, service_signature`,
+		policyID, versionID, epoch,
+	).Scan(&rt.ID, &rt.PolicyID, &rt.PolicyVersionID, &rt.Epoch, &rt.State, &rt.StartedAt, &rt.CompletedAt, &rt.Manifest, &rt.ServiceSignature)
+	if err == nil {
+		return &rt, true, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, err
+	}
+	// Already existed — fetch.
+	err = q.QueryRow(ctx,
+		`SELECT id, policy_id, policy_version_id, epoch, state, started_at, completed_at, manifest, service_signature
+		 FROM release_transactions WHERE policy_id = $1 AND epoch = $2`, policyID, epoch,
+	).Scan(&rt.ID, &rt.PolicyID, &rt.PolicyVersionID, &rt.Epoch, &rt.State, &rt.StartedAt, &rt.CompletedAt, &rt.Manifest, &rt.ServiceSignature)
+	return &rt, false, err
+}
+
+// FindPendingReleases returns release transactions that still need work.
+func FindPendingReleases(ctx context.Context, q Querier, limit int) ([]ReleaseTransaction, error) {
+	rows, err := q.Query(ctx,
+		`SELECT id, policy_id, policy_version_id, epoch, state, started_at, completed_at, manifest, service_signature
+		 FROM release_transactions
+		 WHERE state IN ('pending','unsealing','packaging','publishing')
+		 ORDER BY started_at ASC LIMIT $1 FOR UPDATE SKIP LOCKED`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ReleaseTransaction
+	for rows.Next() {
+		var rt ReleaseTransaction
+		if err := rows.Scan(&rt.ID, &rt.PolicyID, &rt.PolicyVersionID, &rt.Epoch, &rt.State, &rt.StartedAt, &rt.CompletedAt, &rt.Manifest, &rt.ServiceSignature); err != nil {
+			return nil, err
+		}
+		out = append(out, rt)
+	}
+	return out, rows.Err()
+}
+
+// UpdateReleaseState advances a release transaction to a new state.
+func UpdateReleaseState(ctx context.Context, q Querier, id uuid.UUID, newState string) error {
+	_, err := q.Exec(ctx, `UPDATE release_transactions SET state = $1 WHERE id = $2`, newState, id)
+	return err
+}
+
+// FinishRelease sets the manifest + signature and marks completed.
+func FinishRelease(ctx context.Context, q Querier, id uuid.UUID, newState string, manifest json.RawMessage, sig []byte) error {
+	_, err := q.Exec(ctx,
+		`UPDATE release_transactions
+		   SET state = $1, manifest = $2, service_signature = $3, completed_at = now()
+		 WHERE id = $4`, newState, manifest, sig, id)
+	return err
+}
+
+// RecordDestinationAttempt inserts a per-destination attempt row.
+func RecordDestinationAttempt(ctx context.Context, q Querier, releaseID, destID uuid.UUID, attempt int, state string, lastErr string) error {
+	var errPtr *string
+	if lastErr != "" {
+		errPtr = &lastErr
+	}
+	_, err := q.Exec(ctx,
+		`INSERT INTO release_destination_attempts (release_transaction_id, destination_id, attempt, state, last_error, started_at, completed_at)
+		 VALUES ($1, $2, $3, $4, $5, now(), CASE WHEN $4 IN ('ok','failed') THEN now() ELSE NULL END)`,
+		releaseID, destID, attempt, state, errPtr)
+	return err
+}
+
+// ListTriggeredPoliciesNeedingRelease finds policies in 'triggered' state for
+// which we haven't yet created a release transaction at the current epoch.
+func ListTriggeredPoliciesNeedingRelease(ctx context.Context, q Querier, limit int) ([]struct {
+	PolicyID        uuid.UUID
+	PolicyVersionID uuid.UUID
+	Epoch           int64
+}, error) {
+	rows, err := q.Query(ctx,
+		`SELECT p.id, p.active_version_id, ps.epoch
+		 FROM policies p
+		 JOIN policy_states ps ON ps.policy_id = p.id
+		 WHERE p.state = 'triggered'
+		   AND p.active_version_id IS NOT NULL
+		   AND NOT EXISTS (
+		     SELECT 1 FROM release_transactions rt
+		     WHERE rt.policy_id = p.id AND rt.epoch = ps.epoch
+		   )
+		 LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	type row = struct {
+		PolicyID        uuid.UUID
+		PolicyVersionID uuid.UUID
+		Epoch           int64
+	}
+	var out []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.PolicyID, &r.PolicyVersionID, &r.Epoch); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}

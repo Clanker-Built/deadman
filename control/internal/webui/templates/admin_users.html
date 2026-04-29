@@ -1,0 +1,42 @@
+{{define "content"}}
+<section class="admin">
+  <h1>Admin · Users</h1>
+  <nav class="admin-nav">
+    <a href="/ui/admin/">Overview</a>
+    <a href="/ui/admin/users" class="current">Users</a>
+    <a href="/ui/admin/policies">Policies</a>
+    <a href="/ui/admin/storage">Storage</a>
+    <a href="/ui/admin/ledger">Ledger</a>
+    <a href="/ui/admin/metrics">Metrics</a>
+    <a href="/ui/admin/backups">Backups</a>
+    <a href="/ui/admin/config">Config</a>
+    <a href="/ui/admin/vault">Vault</a>
+  </nav>
+
+  {{if .Admin.Users}}
+  <table class="policies">
+    <thead><tr>
+      <th>Email</th><th>Status</th><th>Admin</th>
+      <th>Policies</th><th>Armed</th>
+      <th>Bundles</th><th>Created</th><th></th>
+    </tr></thead>
+    <tbody>
+    {{range .Admin.Users}}
+      <tr>
+        <td><a href="/ui/admin/users/{{.ID}}">{{.Email}}</a></td>
+        <td>{{.Status}}</td>
+        <td>{{if .IsAdmin}}<span class="state ok">yes</span>{{else}}&mdash;{{end}}</td>
+        <td>{{.PolicyCount}}</td>
+        <td>{{.ArmedCount}}</td>
+        <td>{{.BundleCount}}</td>
+        <td>{{.CreatedAt.Format "2006-01-02"}}</td>
+        <td><a href="/ui/admin/users/{{.ID}}">open</a></td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}
+    <p>No users yet.</p>
+  {{end}}
+</section>
+{{end}}

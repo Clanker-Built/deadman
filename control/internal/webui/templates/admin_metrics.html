@@ -1,0 +1,92 @@
+{{define "content"}}
+<section class="admin">
+  <h1>Admin · Metrics</h1>
+  <nav class="admin-nav">
+    <a href="/ui/admin/">Overview</a>
+    <a href="/ui/admin/users">Users</a>
+    <a href="/ui/admin/policies">Policies</a>
+    <a href="/ui/admin/storage">Storage</a>
+    <a href="/ui/admin/ledger">Ledger</a>
+    <a href="/ui/admin/metrics" class="current">Metrics</a>
+    <a href="/ui/admin/backups">Backups</a>
+    <a href="/ui/admin/config">Config</a>
+    <a href="/ui/admin/vault">Vault</a>
+  </nav>
+
+  <p class="muted">
+    In-process snapshot. Counters and histograms reset on every server
+    restart. Release throughput is read from the audit table and is
+    authoritative across restarts.
+  </p>
+
+  <h2>Release throughput</h2>
+  {{if .Admin.ReleaseThroughput}}
+  <table class="policies">
+    <thead><tr><th>Window</th><th>Releases completed</th></tr></thead>
+    <tbody>
+    {{range .Admin.ReleaseThroughput}}
+      <tr><td>{{.Window}}</td><td>{{.Count}}</td></tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{end}}
+
+  {{with .Admin.MetricsSnap}}
+  <p class="muted">Captured at {{.CapturedAt}}.</p>
+
+  <h2>HTTP requests by route</h2>
+  {{if .Routes}}
+  <table class="policies">
+    <thead><tr>
+      <th>Route</th><th>Count</th><th>p50 ms</th><th>p95 ms</th><th>p99 ms</th><th>max ms</th>
+    </tr></thead>
+    <tbody>
+    {{range .Routes}}
+      <tr>
+        <td><code>{{.Route}}</code></td>
+        <td>{{.Count}}</td>
+        <td>{{.P50ms}}</td>
+        <td>{{.P95ms}}</td>
+        <td>{{.P99ms}}</td>
+        <td>{{.MaxMs}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}
+    <p class="muted">No requests observed yet since last restart.</p>
+  {{end}}
+
+  <h2>Counters</h2>
+  {{if .Counters}}
+  <dl class="kv">
+    {{range $k, $v := .Counters}}
+      <dt><code>{{$k}}</code></dt><dd>{{$v}}</dd>
+    {{end}}
+  </dl>
+  {{else}}
+    <p class="muted">No counters yet.</p>
+  {{end}}
+
+  {{if .Rates}}
+  <h2>Event rates (since last restart)</h2>
+  <table class="policies">
+    <thead><tr><th>Event</th><th>1m</th><th>5m</th><th>60m</th><th>total</th></tr></thead>
+    <tbody>
+    {{range $k, $v := .Rates}}
+      <tr>
+        <td><code>{{$k}}</code></td>
+        <td>{{$v.Last1m}}</td>
+        <td>{{$v.Last5m}}</td>
+        <td>{{$v.Last60m}}</td>
+        <td>{{$v.Total}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{end}}
+  {{else}}
+    <p class="muted">Metrics registry not configured.</p>
+  {{end}}
+</section>
+{{end}}

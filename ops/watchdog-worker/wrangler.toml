@@ -1,0 +1,47 @@
+# Cloudflare Worker that probes the Deadman control plane's /watchdog
+# endpoint on a cron schedule, verifies the Ed25519 signature against the
+# pinned service public key, and alerts (via a second webhook) if either:
+#   - the endpoint is unreachable,
+#   - the signature is invalid,
+#   - the last scheduler tick is older than STALE_THRESHOLD_SECONDS.
+#
+# Why Cloudflare Worker: runs outside your own infrastructure, so a failure
+# of the control plane (scheduler dies, DB unreachable, whole VM down) is
+# still detected. This is the §15.3 / threat #11 "silent failure to release"
+# mitigation.
+#
+# Deploy with:
+#   cd ops/watchdog-worker
+#   npx wrangler deploy
+#
+# Edit the vars below to match your deployment.
+
+name = "deadman-watchdog"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+
+[vars]
+# Public URL of your control plane's /watchdog endpoint.
+WATCHDOG_URL = "https://deadman.example.org/watchdog"
+
+# Alert endpoint — any URL that will receive a POST when the watchdog fails.
+# Point at a paging service (PagerDuty Events v2, Slack webhook, etc.) or a
+# second independent mailer. Leave empty to disable.
+ALERT_URL = ""
+
+# Minimum shared secret the alert endpoint can use to authenticate the POST.
+ALERT_SHARED_SECRET = ""
+
+# Tolerated staleness. If (now - last_scheduler_tick) > this, we alert.
+# Match this to ~3× your scheduler Interval with a floor.
+STALE_THRESHOLD_SECONDS = "300"
+
+# PINNED service public key (base64url, unpadded). Fetch from a FRESH install
+# via `curl https://deadman.example.org/watchdog | jq -r .service_pubkey` and
+# pin it here. Never auto-trust a key rotation — do it by hand with a
+# documented ceremony.
+SERVICE_PUBKEY_B64URL = ""
+
+[triggers]
+# Probe every minute. Cloudflare free tier supports cron triggers.
+crons = ["*/1 * * * *"]

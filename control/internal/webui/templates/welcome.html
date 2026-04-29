@@ -1,0 +1,66 @@
+{{define "content"}}
+<section>
+  <h1>Welcome.</h1>
+  <p class="lede">
+    You have an account. Before you arm anything, here's what the next
+    few minutes look like.
+  </p>
+
+  <div class="warn-block">
+    <h3>You're going to do four things, in this order.</h3>
+    <ol>
+      <li><strong>Upload a bundle.</strong> Your files, encrypted in your
+          browser before upload. You can upload more bundles later. Start
+          with something small you'd be willing to lose if you make a
+          configuration mistake.</li>
+      <li><strong>Add a destination.</strong> Where your bundle goes if a
+          release fires — a public landing page, email recipients, or a
+          webhook you control. Pick the least-consequential option you can
+          for your first policy.</li>
+      <li><strong>Create a policy.</strong> How often you check in, how
+          long the grace period is, which bundle(s) release to which
+          destination(s).</li>
+      <li><strong>Arm the policy.</strong> A 24-hour activation cooldown
+          starts. You can cancel during that window. Then the timer runs.</li>
+    </ol>
+  </div>
+
+  <div class="warn-block">
+    <h3>A realistic starter policy</h3>
+    <p>
+      If you're unsure, here's a configuration most first-time users will
+      find reasonable:
+    </p>
+    <ul>
+      <li>Check-in interval: <strong>7 days</strong></li>
+      <li>Grace period: <strong>72 hours</strong></li>
+      <li>Release mode: <strong>private</strong> (delivers to named recipients only)</li>
+      <li>Bundle: a short text note you're comfortable sharing with a trusted friend</li>
+      <li>Destination: email, addressed to yourself or a trusted recipient</li>
+    </ul>
+    <p>
+      Run this for a week or two. Check in on schedule. Miss a check-in
+      deliberately to see the warning flow. Once you trust the tool, graduate
+      to real material and a longer interval.
+    </p>
+  </div>
+
+  <div class="warn-block">
+    <h3>One more time: the things you cannot undo.</h3>
+    <ul>
+      <li>A release that has fired cannot be unpublished.</li>
+      <li>Lose both your passphrase and all 10 recovery codes — account is gone.</li>
+      <li>A policy in state <code>released</code> or <code>revoked</code> is terminal.</li>
+    </ul>
+    <p>
+      Everything else is safe to experiment with. Create drafts, revoke
+      them, make new ones. Nothing before "arm" can hurt you.
+    </p>
+  </div>
+
+  <p class="cta">
+    <a class="btn primary" href="/ui/bundles/new">Step 1: Upload your first bundle</a>
+    <a class="btn" href="/ui/dashboard">Skip this, take me to the dashboard</a>
+  </p>
+</section>
+{{end}}

@@ -1,0 +1,63 @@
+{{define "content"}}
+<section class="admin">
+  <h1>Admin · Overview</h1>
+  <p class="muted">
+    Operator view. You are seeing metadata only — no user ciphertext, no
+    passkey private keys, no destination auth tokens in cleartext, no vault
+    passphrases, no offline recovery share. Every action you take below is
+    appended to the signed audit ledger.
+  </p>
+
+  <nav class="admin-nav">
+    <a href="/ui/admin/" class="current">Overview</a>
+    <a href="/ui/admin/users">Users</a>
+    <a href="/ui/admin/policies">Policies</a>
+    <a href="/ui/admin/storage">Storage</a>
+    <a href="/ui/admin/ledger">Ledger</a>
+    <a href="/ui/admin/metrics">Metrics</a>
+    <a href="/ui/admin/backups">Backups</a>
+    <a href="/ui/admin/config">Config</a>
+    <a href="/ui/admin/vault">Vault</a>
+  </nav>
+
+  {{with .Admin.Overview}}
+  <div class="stat-grid">
+    <div class="stat"><span class="n">{{.UsersTotal}}</span><span class="l">users</span></div>
+    <div class="stat"><span class="n">{{.UsersActive7d}}</span><span class="l">active 7d</span></div>
+    <div class="stat"><span class="n">{{.UsersAdmin}}</span><span class="l">admins</span></div>
+    <div class="stat"><span class="n">{{.PoliciesArmed}}</span><span class="l">policies armed</span></div>
+    <div class="stat"><span class="n">{{.PoliciesTriggered}}</span><span class="l">triggered</span></div>
+    <div class="stat"><span class="n">{{.PoliciesReleased}}</span><span class="l">released</span></div>
+    <div class="stat"><span class="n">{{.BundlesTotal}}</span><span class="l">bundles stored</span></div>
+    <div class="stat"><span class="n">{{.BundlesBytes}}</span><span class="l">ciphertext bytes</span></div>
+    <div class="stat"><span class="n">{{.DestinationsTotal}}</span><span class="l">destinations</span></div>
+    <div class="stat"><span class="n">{{.AuditEventsTotal}}</span><span class="l">audit events</span></div>
+    <div class="stat"><span class="n">{{.AuditLast24h}}</span><span class="l">audit last 24h</span></div>
+  </div>
+  {{end}}
+
+  <h2>System status</h2>
+  <dl class="kv">
+    <dt>Vault</dt>
+    <dd>
+      {{if .Admin.VaultStatus.HasVault}}
+        {{if .Admin.VaultStatus.Unlocked}}
+          <span class="state ok">unlocked</span> — releases can proceed
+        {{else}}
+          <span class="state warn">locked</span> — triggered releases will stall. <a href="/ui/admin/vault">Unlock</a>
+        {{end}}
+      {{else}}
+        <span class="state muted">legacy single-key mode</span>
+      {{end}}
+    </dd>
+    <dt>Scheduler</dt>
+    <dd>
+      {{if .Admin.SchedulerTick}}
+        last tick at {{.Admin.SchedulerTick.Format "2006-01-02 15:04:05 UTC"}}
+      {{else}}
+        <span class="muted">no tick recorded yet</span>
+      {{end}}
+    </dd>
+  </dl>
+</section>
+{{end}}

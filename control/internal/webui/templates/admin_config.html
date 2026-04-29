@@ -1,0 +1,106 @@
+{{define "content"}}
+<section class="admin">
+  <h1>Admin · Config</h1>
+  <nav class="admin-nav">
+    <a href="/ui/admin/">Overview</a>
+    <a href="/ui/admin/users">Users</a>
+    <a href="/ui/admin/policies">Policies</a>
+    <a href="/ui/admin/storage">Storage</a>
+    <a href="/ui/admin/ledger">Ledger</a>
+    <a href="/ui/admin/metrics">Metrics</a>
+    <a href="/ui/admin/backups">Backups</a>
+    <a href="/ui/admin/config" class="current">Config</a>
+    <a href="/ui/admin/vault">Vault</a>
+  </nav>
+
+  <p class="muted">
+    Settings saved here are persisted to the database and take effect on the
+    next server restart. Env-var fallbacks remain the boot-time source of
+    truth; DB values override env on startup. Secrets (TLS key, DB URL, S3
+    credentials) are intentionally NOT editable from the panel.
+  </p>
+
+  {{with .Admin.ConfigEffective}}
+  <h2>Currently running</h2>
+  <dl class="kv">
+    <dt>SMTP host</dt><dd>{{.SMTPHost}}{{if not .SMTPHost}}<span class="muted">(unset)</span>{{end}}</dd>
+    <dt>SMTP port</dt><dd>{{.SMTPPort}}</dd>
+    <dt>SMTP username</dt><dd>{{.SMTPUsername}}{{if not .SMTPUsername}}<span class="muted">(unset)</span>{{end}}</dd>
+    <dt>SMTP password</dt><dd class="muted">{{.SMTPPasswordMask}}</dd>
+    <dt>SMTP from</dt><dd>{{.SMTPFrom}}{{if not .SMTPFrom}}<span class="muted">(unset)</span>{{end}}</dd>
+    <dt>Insecure TLS skip</dt><dd>{{if .SMTPInsecureSkip}}yes{{else}}no{{end}}</dd>
+    <dt>Public base URL</dt><dd>{{.PublicBaseURL}}</dd>
+    <dt>Mailer</dt><dd>{{if .MailerEnabled}}<span class="state ok">enabled</span>{{else}}<span class="state warn">disabled</span>{{end}}</dd>
+  </dl>
+  {{if .RestartRequired}}
+    <p class="flash warn">
+      Saved settings differ from what's running. Restart the control plane
+      to apply.
+    </p>
+  {{end}}
+  {{end}}
+
+  <h2>Edit</h2>
+  <form method="POST" action="/ui/admin/config" class="stacked">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    {{with .Admin.Settings}}
+    <label>SMTP host
+      <input type="text" name="smtp_host" value="{{if .SMTPHost}}{{.SMTPHost}}{{end}}">
+    </label>
+    <label>SMTP port
+      <input type="number" name="smtp_port" min="1" max="65535" value="{{if .SMTPPort}}{{.SMTPPort}}{{end}}">
+    </label>
+    <label>SMTP username
+      <input type="text" name="smtp_username" value="{{if .SMTPUsername}}{{.SMTPUsername}}{{end}}">
+    </label>
+    <label>SMTP password
+      <input type="password" name="smtp_password" autocomplete="new-password"
+             placeholder="leave blank to keep existing">
+    </label>
+    <label class="inline-check">
+      <input type="checkbox" name="clear_smtp_password">
+      Clear the stored password (fall back to env)
+    </label>
+    <p class="muted">
+      The password is wrapped with the release public key when saved
+      (RSA-OAEP + AES-GCM). It only becomes readable when the vault is
+      unlocked; a DB leak alone does not reveal it.
+    </p>
+    <label>SMTP from
+      <input type="text" name="smtp_from" placeholder="Deadman &lt;noreply@example.org&gt;"
+             value="{{if .SMTPFrom}}{{.SMTPFrom}}{{end}}">
+    </label>
+    <label class="inline-check">
+      <input type="checkbox" name="smtp_insecure_skip" {{if .SMTPInsecureSkip}}checked{{end}}>
+      Skip TLS verification (dev sinks like mailhog only)
+    </label>
+    <label>Public base URL
+      <input type="text" name="public_base_url" placeholder="https://deadman.example.org"
+             value="{{if .PublicBaseURL}}{{.PublicBaseURL}}{{end}}">
+    </label>
+    <label>Login rate limit (per minute, per IP)
+      <input type="number" name="rate_limit_login_per_min" min="0"
+             value="{{if .RateLimitLoginPerMin}}{{.RateLimitLoginPerMin}}{{end}}">
+    </label>
+    <label>Check-in rate limit (per minute, per session)
+      <input type="number" name="rate_limit_checkin_per_min" min="0"
+             value="{{if .RateLimitChkinPerMin}}{{.RateLimitChkinPerMin}}{{end}}">
+    </label>
+    {{end}}
+    <button type="submit">Save settings</button>
+  </form>
+
+  <h2>Test SMTP</h2>
+  <p class="muted">
+    Uses the <em>currently running</em> mailer (env-derived), not the saved-
+    but-unrestarted form above. Send to yourself first to avoid spamming.
+  </p>
+  <form method="POST" action="/ui/admin/config/test-smtp" class="inline-row">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label>Send to
+      <input type="email" name="to" placeholder="{{.UserEmail}}">
+    </label>
+    <button type="submit">Send test</button>
+  </form>
+</section>
+{{end}}

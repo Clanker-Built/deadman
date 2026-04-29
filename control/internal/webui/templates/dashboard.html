@@ -1,0 +1,104 @@
+{{define "content"}}
+<section>
+  <h1>Dashboard</h1>
+  <p class="muted">Signed in as {{.UserEmail}}.</p>
+
+  {{if .ShowSetup}}
+  <div class="setup-card">
+    <h2>Set up your first switch</h2>
+    <p class="muted">{{.SetupProgress}} of 4 steps complete. The guide disappears once you arm a policy.</p>
+    <ol class="stepper">
+      {{range .SetupSteps}}
+        <li class="step step-{{.Status}}">
+          <span class="step-num">{{.Num}}</span>
+          <div class="step-body">
+            <h3>{{.Title}}</h3>
+            <p>{{.Blurb}}</p>
+            {{if eq .Status "active"}}
+              <a class="btn primary small" href="{{.CTA}}">{{.CTAText}}</a>
+            {{else if eq .Status "done"}}
+              <span class="muted">✓ done{{if .Subtext}} — {{.Subtext}}{{end}}</span>
+            {{else}}
+              <span class="muted">waiting on earlier steps</span>
+            {{end}}
+          </div>
+        </li>
+      {{end}}
+    </ol>
+  </div>
+  {{end}}
+
+  {{if .AnyArmed}}
+  <div class="checkin-panel state-{{.WorstState}}">
+    <div class="countdown" data-due="{{.SoonestDueUnix}}">
+      <h2 class="countdown-headline">{{.CountdownHeadline}}</h2>
+      <p class="countdown-detail">{{.CountdownDetail}}</p>
+    </div>
+    <form method="POST" action="/ui/checkin" class="inline">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <button type="submit" class="btn primary">I'm checking in</button>
+    </form>
+    <p class="muted" style="margin-top:0.5rem;">
+      One click resets every armed policy's timer. Session-authenticated;
+      no hardware signature. If you need the stronger phone-based check-in,
+      use the mobile app (coming M5).
+    </p>
+  </div>
+  <script nonce="{{.Nonce}}" src="/ui/static/countdown.js"></script>
+  {{else if .Policies}}
+  <div class="checkin-panel state-draft">
+    <h2 class="countdown-headline muted">No armed policies</h2>
+    <p class="countdown-detail">
+      The check-in countdown appears here once you arm a policy. Your existing
+      policies are in terminal states (released, revoked, or draft). Create a
+      new one, or arm an existing draft from its detail page.
+    </p>
+  </div>
+  {{end}}
+
+  <div class="toolbar">
+    <a class="btn primary" href="/ui/policies/new">New policy</a>
+    <a class="btn" href="/ui/bundles/new">Upload bundle</a>
+  </div>
+
+  <h2>Policies</h2>
+  {{if .Policies}}
+    <table class="policies">
+      <thead><tr><th>Title</th><th>State</th><th>Next due</th><th></th></tr></thead>
+      <tbody>
+      {{range .Policies}}
+        <tr>
+          <td><a href="/ui/policies/{{.ID}}">{{.Title}}</a></td>
+          <td><span class="state state-{{.State}}">{{.State}}</span></td>
+          <td>{{if .NextDueAt}}{{.NextDueAt.Format "2006-01-02 15:04 MST"}}{{else}}—{{end}}</td>
+          <td><a href="/ui/policies/{{.ID}}" class="btn small">Manage</a></td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+  {{else}}
+    <p>You have no policies yet. <a href="/ui/policies/new">Create one</a> to
+    get started. Nothing is armed until you explicitly arm it.</p>
+  {{end}}
+
+  <h2>Bundles</h2>
+  {{if .Bundles}}
+    <table class="policies">
+      <thead><tr><th>Label</th><th>Size</th><th>Scheme</th><th>Uploaded</th></tr></thead>
+      <tbody>
+      {{range .Bundles}}
+        <tr>
+          <td>{{if .Label}}{{.Label}}{{else}}<span class="muted">(unlabeled)</span>{{end}}</td>
+          <td>{{.SizeHuman}}</td>
+          <td><code>{{.WrapScheme}}</code></td>
+          <td>{{.CreatedAt.Format "2006-01-02 15:04"}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+  {{else}}
+    <p>No bundles uploaded. <a href="/ui/bundles/new">Upload one</a> — it's
+    encrypted in your browser before leaving your machine.</p>
+  {{end}}
+</section>
+{{end}}

@@ -1,0 +1,55 @@
+{{define "content"}}
+<section>
+  <h1>Set up two-factor authentication</h1>
+
+  {{if .Flash}}<p class="warn" role="alert">{{.Flash}}</p>{{end}}
+
+  <p>
+    Add this account to an authenticator app: Aegis (Android, recommended),
+    Raivo (iOS), KeePassXC (desktop), 1Password, Bitwarden, Authy, Google
+    Authenticator. Use whatever you already trust.
+  </p>
+
+  <h2>1. Add the account</h2>
+  <p class="muted">
+    Most apps offer a <em>scan QR code</em> or <em>enter setup key</em>
+    option. This page does not render a QR — Tor Browser is brittle with
+    inline images and we want to keep the CSP strict. Use the manual entry:
+  </p>
+
+  <p><strong>Account:</strong> {{.UserEmail}}</p>
+  <p><strong>Type:</strong> Time-based (TOTP), 6 digits, 30-second period, SHA-1</p>
+  <p><strong>Setup key:</strong>
+    <code style="font-size:1.1em; user-select:all">{{.TOTPSecret}}</code>
+  </p>
+  <details>
+    <summary>otpauth:// URL (for apps that paste a URL)</summary>
+    <p><code style="word-break:break-all; user-select:all">{{.TOTPURI}}</code></p>
+  </details>
+
+  <h2>2. Save your recovery codes</h2>
+  <p>
+    Each code is single-use. If you lose your authenticator, you can log in
+    with one code and then set up a new authenticator. <strong>Save them now —
+    they will not be shown again.</strong>
+  </p>
+  <ul style="font-family:monospace; font-size:1.05em; user-select:all; padding-left:1em">
+    {{range .RecoveryCodes}}<li>{{.}}</li>{{end}}
+  </ul>
+
+  <h2>3. Confirm</h2>
+  <p>
+    Enter a code from your authenticator app to finish setup. Codes rotate
+    every 30 seconds.
+  </p>
+
+  <form method="POST" action="/ui/auth/totp/setup" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label for="code">Authenticator code
+      <input type="text" id="code" name="code" required inputmode="numeric"
+             pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code">
+    </label>
+    <button type="submit" class="btn primary">Confirm and finish setup</button>
+  </form>
+</section>
+{{end}}

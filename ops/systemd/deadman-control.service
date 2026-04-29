@@ -1,0 +1,67 @@
+[Unit]
+Description=Deadman control plane (zero-knowledge deadman's switch server)
+Documentation=https://github.com/your-org/deadman/blob/main/docs/self-hosting.md
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=deadman
+Group=deadman
+WorkingDirectory=/var/lib/deadman
+
+# Refuse to write a core dump. The unsealed release private key lives in
+# this process's memory while the vault is unlocked; a core file written
+# to disk would leak it. There is no legitimate operational reason to
+# core-dump the running deadman-control. Investigate via stack traces,
+# pprof, and the audit log instead.
+LimitCORE=0
+
+# Env file holds DB URL, vault passphrases, RP ID, etc.
+# Mode 0600, owned by deadman:deadman.
+EnvironmentFile=/etc/deadman/deadman.env
+
+ExecStart=/opt/deadman/bin/deadman-control
+
+# Restart on failure but back off — locking the vault after a crash is desired
+# behaviour, and a flapping process should not silently mask a configuration
+# problem.
+Restart=on-failure
+RestartSec=15s
+
+# Capture stdout/stderr to a log file. The first-run vault generation prints
+# the offline recovery share (share 3) once to stderr; the setup script tails
+# this file to surface it to the operator.
+StandardOutput=append:/var/log/deadman/server.log
+StandardError=append:/var/log/deadman/server.log
+
+# Hardening — minimum useful set for a single-binary Go service.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+# MemoryDenyWriteExecute is intentionally NOT set. A static Go binary
+# typically tolerates it, but Go's race-detector tooling, cgo-linked
+# extensions, and some runtime modes can break under it. If you've
+# verified your specific build works, add `MemoryDenyWriteExecute=true`
+# yourself. Document the change in your ops journal.
+
+# Writable state: the vault file, signing keys, anything the binary persists.
+ReadWritePaths=/var/lib/deadman /var/log/deadman
+
+[Install]
+WantedBy=multi-user.target

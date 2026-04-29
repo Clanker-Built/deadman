@@ -1,0 +1,136 @@
+{{define "content"}}
+<section>
+  <h1>New policy</h1>
+  <p>
+    A policy describes your check-in schedule and what happens if you miss.
+    All fields can be edited later while the policy is still a draft.
+    Arming the policy applies a <strong>24-hour activation cooldown</strong>
+    before the timer actually starts.
+  </p>
+
+  <form method="POST" action="/ui/policies/new" class="stack">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label>Title
+      <input type="text" name="title" required maxlength="120">
+      <small>Just for your own reference. Recipients do not see this.</small>
+    </label>
+    <label>Description (optional)
+      <textarea name="description" rows="3" maxlength="2000"></textarea>
+    </label>
+
+    <fieldset>
+      <legend>Schedule</legend>
+      <label>Check-in interval (days)
+        <input type="number" name="interval_days" min="1" max="365" value="14" required>
+      </label>
+      <details class="help"><summary>How do I pick an interval?</summary>
+        <div>
+          The interval is how often you must check in. Shorter = you surface
+          a problem sooner, but also more likely to miss a check-in from
+          normal life. Most users pick 3–14 days. Go longer if your life
+          has natural gaps (travel, field work, hospital stays).
+        </div>
+      </details>
+
+      <label>Grace period (hours)
+        <input type="number" name="grace_period_hours" min="24" max="720" value="72" required>
+      </label>
+      <details class="help"><summary>What is the grace period?</summary>
+        <div>
+          After your due date passes, you get this long to check in before
+          the release fires. Warnings are sent throughout the grace window.
+          Minimum 24 h. 72 h (3 days) is the sensible default for most
+          users; 168 h (1 week) is reasonable if you might be offline.
+        </div>
+      </details>
+
+      <label>Hold period (hours, optional)
+        <input type="number" name="hold_period_hours" min="0" max="168" value="0">
+      </label>
+      <details class="help"><summary>What is a hold?</summary>
+        <div>
+          In a future version a trusted contact (not yet configurable) can
+          pause the countdown for this long — useful if someone who knows
+          you can vouch you're still alive after you missed a check-in but
+          before releasing. Set 0 for now.
+        </div>
+      </details>
+    </fieldset>
+
+    <fieldset>
+      <legend>Release mode</legend>
+      <label class="radio">
+        <input type="radio" name="release_mode" value="private" checked>
+        <strong>Private</strong> — deliver to named recipients only (email / webhook). Recommended for your first policy.
+      </label>
+      <label class="radio">
+        <input type="radio" name="release_mode" value="limited_public">
+        <strong>Limited public</strong> — a signed public landing page with an
+        unguessable URL. Not indexed by search engines, but anyone with the
+        URL can see it.
+      </label>
+      <label class="radio">
+        <input type="radio" name="release_mode" value="full_public" disabled>
+        <strong>Full public</strong> — indexable page. Disabled until the
+        48-hour public-release cooldown lands in a future version.
+      </label>
+      <label class="radio">
+        <input type="radio" name="release_mode" value="staged">
+        <strong>Staged</strong> — notify recipients first, public later.
+      </label>
+      <details class="help"><summary>Which mode should I pick?</summary>
+        <div>
+          Start with <strong>private</strong>. Live with the tool for a few
+          weeks. Graduate to limited public only once you're confident in
+          your check-in cadence. Full public release is the most consequential
+          mode the product supports — do not use it casually.
+        </div>
+      </details>
+    </fieldset>
+
+    {{if .Bundles}}
+    <fieldset>
+      <legend>Bundles to release</legend>
+      {{range .Bundles}}
+        <label class="radio">
+          <input type="checkbox" name="bundle_ids" value="{{.ID}}">
+          {{if .Label}}{{.Label}}{{else}}(unlabeled){{end}} — {{.SizeHuman}}
+        </label>
+      {{end}}
+    </fieldset>
+    {{else}}
+    <p class="warn">You have no bundles yet. <a href="/ui/bundles/new">Upload
+    one</a> first — a policy with no bundles won't release anything.</p>
+    {{end}}
+
+    {{if .Destinations}}
+    <fieldset>
+      <legend>Destinations</legend>
+      {{range .Destinations}}
+        <label class="radio">
+          <input type="checkbox" name="destination_ids" value="{{.ID}}">
+          <strong>{{.Kind}}</strong> — {{.Label}}{{if .ConfigSummary}} ({{.ConfigSummary}}){{end}}
+        </label>
+      {{end}}
+    </fieldset>
+    {{else}}
+    <p class="warn">You have no destinations yet. <a href="/ui/destinations">Add one</a>
+    to tell the release pipeline where your bundles go.</p>
+    {{end}}
+
+    <div class="danger-zone">
+      <h3>Before you continue</h3>
+      <ul>
+        <li>Your bundle must be encrypted on your device before upload. The
+            server cannot read it.</li>
+        <li>Irreversible actions (public release, destination changes) require
+            re-authentication and a cooldown period.</li>
+        <li>You can suspend this policy at any time before trigger.</li>
+      </ul>
+    </div>
+
+    <button type="submit" class="btn primary">Create draft</button>
+    <a href="/ui/dashboard" class="btn">Cancel</a>
+  </form>
+</section>
+{{end}}

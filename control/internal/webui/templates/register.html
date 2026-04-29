@@ -1,0 +1,90 @@
+{{define "content"}}
+<section>
+  <h1>Create an account</h1>
+  <p>
+    Before you proceed, confirm you understand the key properties of this
+    service. These are not marketing copy — they describe what the software
+    actually does. If any of them are news to you, read the
+    <a href="/ui/help">full help</a> first.
+  </p>
+
+  {{if .Flash}}<p class="warn" role="alert">{{.Flash}}</p>{{end}}
+
+  <form id="register-form" method="POST" action="/ui/register" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <div class="danger-zone">
+      <h3>Acknowledgments</h3>
+
+      <label class="radio">
+        <input type="checkbox" name="ack1" required>
+        I understand that <strong>release is irreversible</strong>. Once a
+        policy triggers and delivers material, I cannot unpublish it.
+      </label>
+
+      <label class="radio">
+        <input type="checkbox" name="ack2" required>
+        I understand that <strong>if I lose my passphrase AND my recovery
+        codes, my account is unrecoverable</strong>. No password reset, no
+        operator override.
+      </label>
+
+      <label class="radio">
+        <input type="checkbox" name="ack3" required>
+        I understand that <strong>armed policies keep running if I cannot
+        log in</strong>. This is the feature, not a bug.
+      </label>
+
+      <label class="radio">
+        <input type="checkbox" name="ack4" required>
+        I understand that <strong>operational hygiene is my responsibility</strong>:
+        Tor Browser or equivalent, disposable identity, metadata stripping,
+        and not linking this account to other services I use.
+      </label>
+
+      <label class="radio">
+        <input type="checkbox" name="ack5" required>
+        I understand that <strong>the operator of this server has a limited
+        but real capability to access my bundle contents during a release</strong>,
+        and that a compromised operator is a realistic threat. I accept this
+        tradeoff, or I am running my own instance.
+      </label>
+
+      <label class="radio">
+        <input type="checkbox" name="ack6" required>
+        I have read — or I will read before arming anything — the
+        <a href="/ui/help">Help &amp; Safety Guide</a>.
+      </label>
+    </div>
+
+    <h2>Your account</h2>
+    <p class="muted">
+      Use an email you do not use anywhere else. Choose a passphrase of at
+      least 12 characters — longer is better. After you submit, you will be
+      shown a one-time set of recovery codes; save them.
+    </p>
+    <label for="email">Email
+      <input type="email" id="email" name="email" required autocomplete="off">
+    </label>
+    <label for="display_name">Display name (only shown to you)
+      <input type="text" id="display_name" name="display_name" autocomplete="off">
+    </label>
+    <label for="passphrase">Passphrase (12+ characters)
+      <input type="password" id="passphrase" name="passphrase" required minlength="12" autocomplete="new-password">
+    </label>
+    <label for="passphrase_confirm">Confirm passphrase
+      <input type="password" id="passphrase_confirm" name="passphrase_confirm" required minlength="12" autocomplete="new-password">
+    </label>
+
+    <button type="submit" class="btn primary">Create account</button>
+    <a href="/ui/" class="btn">Cancel, I'm not ready</a>
+  </form>
+
+  <p class="muted" style="margin-top:2em">
+    <small>
+      Already have a hardware passkey? Passphrase + TOTP is the path for
+      Tor Browser; you can add a hardware passkey from your account page
+      after a TLS-fronted deployment is configured.
+    </small>
+  </p>
+</section>
+{{end}}

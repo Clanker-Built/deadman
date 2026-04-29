@@ -1,0 +1,60 @@
+{{define "content"}}
+<section>
+  <h1>New bundle</h1>
+  <p>
+    Select the content you want released if you miss a check-in. It will be
+    encrypted in your browser <em>before</em> upload — the server only ever
+    sees ciphertext. Small files (text, short videos, a handful of documents)
+    work best; keep each bundle under 256 MiB.
+  </p>
+
+  <form id="bundle-form" class="stack" novalidate>
+    <label>Label (for your reference)
+      <input type="text" name="label" maxlength="120" required>
+      <small>Only you see this label. Recipients don't.</small>
+    </label>
+    <label>File(s) to include
+      <input type="file" name="files" multiple required>
+      <small>Multiple files are packed into a single encrypted archive client-side.</small>
+    </label>
+    <details class="help"><summary>What should I upload?</summary>
+      <div>
+        Any material you want released automatically if you stop checking in.
+        A few practical rules:
+        <ul>
+          <li>Strip metadata first (EXIF on images, PDF properties, etc.).
+              The release worker does not sanitize — what you upload is what
+              goes out.</li>
+          <li>Name files neutrally. Filenames are readable to an operator
+              during release.</li>
+          <li>If the material is extremely sensitive, encrypt it <em>again</em>
+              with a PGP key or age recipient you trust, and include
+              decryption instructions in a readme. Layer your crypto.</li>
+          <li>Under 256 MiB per bundle. For larger archives split across
+              multiple bundles or stage a torrent link inside the bundle.</li>
+        </ul>
+      </div>
+    </details>
+
+    <div class="danger-zone">
+      <h3>Before you upload</h3>
+      <ul>
+        <li>The encryption key is generated in your browser and never leaves
+        until it's sealed under the server's release key.</li>
+        <li>Only the release pipeline can decrypt, and only when your policy
+        state machine says so.</li>
+        <li>Operational note for whistle-blowers: use Tor Browser or a
+        disposable VM. Do not include metadata you didn't mean to share —
+        strip EXIF from images, check PDF properties, etc.</li>
+      </ul>
+    </div>
+
+    <button type="submit" class="btn primary">Encrypt and upload</button>
+    <p id="bundle-status" role="status" aria-live="polite"></p>
+    <progress id="bundle-progress" value="0" max="100" hidden></progress>
+  </form>
+</section>
+
+<script nonce="{{.Nonce}}" src="/ui/static/bundle.js"></script>
+<script nonce="{{.Nonce}}">window.__deadmanBundleInit();</script>
+{{end}}

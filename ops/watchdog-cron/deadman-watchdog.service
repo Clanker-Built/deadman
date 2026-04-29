@@ -1,0 +1,15 @@
+[Unit]
+Description=Deadman onion watchdog (one-shot poll)
+After=tor.service
+Requires=tor.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/deadman-watchdog/env
+ExecStart=/usr/local/bin/watchdog-poll.sh
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true

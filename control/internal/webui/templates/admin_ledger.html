@@ -1,0 +1,93 @@
+{{define "content"}}
+<section class="admin">
+  <h1>Admin · Ledger</h1>
+  <nav class="admin-nav">
+    <a href="/ui/admin/">Overview</a>
+    <a href="/ui/admin/users">Users</a>
+    <a href="/ui/admin/policies">Policies</a>
+    <a href="/ui/admin/storage">Storage</a>
+    <a href="/ui/admin/ledger" class="current">Ledger</a>
+    <a href="/ui/admin/metrics">Metrics</a>
+    <a href="/ui/admin/backups">Backups</a>
+    <a href="/ui/admin/config">Config</a>
+    <a href="/ui/admin/vault">Vault</a>
+  </nav>
+
+  <p class="muted">
+    Full hash-chained audit. Admin view — every user's events are visible
+    here. Payload JSON is pretty-printed inline for readability.
+  </p>
+
+  <form method="GET" action="/ui/admin/ledger" class="filter-row">
+    <label>Event type
+      <input type="text" name="event_type" value="{{.Admin.LedgerFilter.EventType}}" placeholder="e.g. admin.promoted">
+    </label>
+    <label>Actor kind
+      <select name="actor_kind">
+        <option value=""></option>
+        {{$sel := .Admin.LedgerFilter.ActorKind}}
+        <option value="user"     {{if eq $sel "user"}}selected{{end}}>user</option>
+        <option value="service"  {{if eq $sel "service"}}selected{{end}}>service</option>
+        <option value="system"   {{if eq $sel "system"}}selected{{end}}>system</option>
+        <option value="device"   {{if eq $sel "device"}}selected{{end}}>device</option>
+        <option value="delegate" {{if eq $sel "delegate"}}selected{{end}}>delegate</option>
+      </select>
+    </label>
+    <label>Since
+      <input type="datetime-local" name="since" value="{{.Admin.LedgerFilter.Since}}">
+    </label>
+    <label>Until
+      <input type="datetime-local" name="until" value="{{.Admin.LedgerFilter.Until}}">
+    </label>
+    <button type="submit">Filter</button>
+    <a href="/ui/admin/ledger" class="linkish">Clear</a>
+  </form>
+
+  <form method="POST" action="/ui/admin/ledger/verify" class="inline">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <button type="submit">Verify chain integrity</button>
+  </form>
+  {{if .Admin.ChainStatus}}
+    {{if eq .Admin.ChainStatus "ok"}}
+      <p class="flash success">Chain verified: all hashes link and all signatures validate.</p>
+    {{else}}
+      <p class="flash error">Verification result: <code>{{.Admin.ChainStatus}}</code></p>
+    {{end}}
+  {{end}}
+
+  {{if .Admin.Ledger}}
+  <table class="policies audit-table">
+    <thead><tr>
+      <th>Seq</th><th>When</th><th>Event</th><th>Actor</th><th>Subject</th><th></th>
+    </tr></thead>
+    <tbody>
+    {{range .Admin.Ledger}}
+      <tr>
+        <td>{{.Seq}}</td>
+        <td>{{.WhenHuman}}</td>
+        <td><code>{{.EventType}}</code></td>
+        <td>{{.ActorSummary}}</td>
+        <td>{{.SubjectSummary}}</td>
+        <td>
+          <details class="help">
+            <summary>details</summary>
+            <div>
+              <dl class="kv small">
+                <dt>event id</dt><dd><code>{{.EventID}}</code></dd>
+                <dt>prev_hash</dt><dd><code>{{.PrevHashHex}}</code></dd>
+                <dt>payload_hash</dt><dd><code>{{.PayloadHashHex}}</code></dd>
+              </dl>
+              {{if .PayloadPretty}}<pre>{{.PayloadPretty}}</pre>{{end}}
+            </div>
+          </details>
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  <p class="muted">Showing {{len .Admin.Ledger}} events, newest first.</p>
+  {{else}}
+    <p>No events match the filter.</p>
+  {{end}}
+</section>
+{{end}}

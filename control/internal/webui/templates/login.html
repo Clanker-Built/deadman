@@ -1,0 +1,36 @@
+{{define "content"}}
+<section>
+  <h1>Log in</h1>
+
+  {{if .Flash}}<p class="warn" role="alert">{{.Flash}}</p>{{end}}
+
+  <form method="POST" action="/ui/login" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label for="email">Email
+      <input type="email" id="email" name="email" required autocomplete="off">
+    </label>
+    <label for="passphrase">Passphrase
+      <input type="password" id="passphrase" name="passphrase" required autocomplete="current-password">
+    </label>
+    <label for="totp_code">Authenticator code (6 digits)
+      <input type="text" id="totp_code" name="totp_code" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code">
+    </label>
+    <details>
+      <summary>Lost your authenticator? Use a recovery code</summary>
+      <label for="recovery_code">Recovery code
+        <input type="text" id="recovery_code" name="recovery_code" autocomplete="off"
+               placeholder="XXXX-XXXX-XXXX-XXXX">
+      </label>
+      <p class="muted"><small>
+        Recovery codes are single-use. After login, set up a new
+        authenticator and regenerate the unused codes.
+      </small></p>
+    </details>
+    <button type="submit" class="btn primary">Log in</button>
+  </form>
+
+  <p class="muted" style="margin-top:1.5em">
+    <small><a href="/ui/register">Create an account</a></small>
+  </p>
+</section>
+{{end}}

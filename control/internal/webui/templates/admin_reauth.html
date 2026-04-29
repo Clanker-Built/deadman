@@ -1,0 +1,18 @@
+{{define "content"}}
+<section class="admin">
+  <h1>Re-authenticate</h1>
+  <p>
+    Admin actions require a recent authentication. Confirm below to continue.
+  </p>
+  <form method="POST" action="/ui/admin/reauth/finish">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="hidden" name="next" value="{{.Admin.NextURL}}">
+    <p class="muted">
+      This confirms your existing session. If you suspect your session cookie
+      has been copied, log out instead and sign in again with passphrase + TOTP.
+    </p>
+    <button type="submit">Confirm and continue</button>
+    <a href="/ui/dashboard" class="linkish">Cancel</a>
+  </form>
+</section>
+{{end}}

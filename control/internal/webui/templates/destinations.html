@@ -1,0 +1,87 @@
+{{define "content"}}
+<section>
+  <h1>Destinations</h1>
+  <p class="muted">Where your bundles go when a policy releases. Changes take
+  effect after a 24-hour cooldown to prevent accidental mis-routing.</p>
+
+  {{if .Destinations}}
+    <table class="policies">
+      <thead><tr><th>Kind</th><th>Label</th><th>Config</th><th>Added</th><th>Token expires</th><th></th></tr></thead>
+      <tbody>
+      {{range .Destinations}}
+        <tr>
+          <td><span class="state state-draft">{{.Kind}}</span></td>
+          <td>{{.Label}}</td>
+          <td><code class="muted">{{.ConfigSummary}}</code></td>
+          <td>{{.CreatedAt.Format "2006-01-02"}}</td>
+          <td>
+            {{if .TokenExpiresHuman}}
+              <span class="{{if .TokenExpirySoon}}warn{{else}}muted{{end}}">{{.TokenExpiresHuman}}</span>
+            {{else}}
+              <span class="muted">n/a</span>
+            {{end}}
+          </td>
+          <td>
+            <form method="POST" action="/ui/destinations/{{.ID}}/revoke" class="inline"
+                  onsubmit="return confirm('Revoke this destination? Policies that reference it will fail at release.');">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+              <button class="btn small danger" type="submit">Revoke</button>
+            </form>
+          </td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+  {{else}}
+    <p>No destinations yet. Add one below.</p>
+  {{end}}
+
+  <h2>Add destination</h2>
+  <form method="POST" action="/ui/destinations/new" class="stack">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label>Label
+      <input type="text" name="label" required maxlength="80">
+    </label>
+    <fieldset>
+      <legend>Kind</legend>
+      <label class="radio">
+        <input type="radio" name="kind" value="public_page" checked>
+        <strong>Public page</strong> — landing page on this server with the
+        decrypted bundle attached. Simplest, no external setup.
+      </label>
+      <label class="radio">
+        <input type="radio" name="kind" value="email">
+        <strong>Email</strong> — send a signed notice with the release URL
+        to one or more recipients. Requires SMTP configured on this server.
+      </label>
+      <label class="radio">
+        <input type="radio" name="kind" value="webhook">
+        <strong>Webhook</strong> — POST a signed JSON to a URL you control.
+        Useful if you run your own site or dispatch through n8n/Zapier.
+      </label>
+    </fieldset>
+    <label>Webhook URL (webhook only)
+      <input type="url" name="webhook_url" placeholder="https://example.org/deadman-hook">
+    </label>
+    <label>Email recipients (email only, one per line)
+      <textarea name="email_recipients" rows="3" placeholder="journalist@example.org&#10;legal@example.org"></textarea>
+    </label>
+    <label>Email subject (optional)
+      <input type="text" name="email_subject" placeholder="Deadman release">
+    </label>
+    <div class="danger-zone">
+      <h3>What happens at release</h3>
+      <ul>
+        <li><strong>public_page</strong>: the release worker decrypts your
+        bundle, publishes a landing page + signed manifest to this server's
+        primary object storage. The URL is unguessable unless you choose to
+        advertise it.</li>
+        <li><strong>webhook</strong>: the worker POSTs a JSON payload with
+        the public URL, manifest hash, and a detached signature over the
+        body. Your endpoint must respond 2xx for the attempt to count.</li>
+      </ul>
+    </div>
+    <button type="submit" class="btn primary">Add destination</button>
+  </form>
+</section>
+{{end}}

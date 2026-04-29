@@ -1,0 +1,354 @@
+{{define "content"}}
+<section>
+  <h1>Help &amp; Safety Guide</h1>
+  <p class="lede">
+    Read this before you arm anything. Return to it when you're unsure.
+    This is the full reference — there are no links out to external
+    documentation.
+  </p>
+
+  <nav class="toc">
+    <ol>
+      <li><a href="#what">What this does</a></li>
+      <li><a href="#consequences">Real-world consequences</a></li>
+      <li><a href="#check-in">Check-ins: how they work</a></li>
+      <li><a href="#states">The state machine</a></li>
+      <li><a href="#hygiene">Operational hygiene</a></li>
+      <li><a href="#detained">If you are detained or injured</a></li>
+      <li><a href="#recovery">Account recovery and passkeys</a></li>
+      <li><a href="#limits">Platform limitations (honest)</a></li>
+      <li><a href="#verify">Verifying a release out-of-band</a></li>
+      <li><a href="#faq">FAQ</a></li>
+    </ol>
+  </nav>
+</section>
+
+<section>
+  <h2 id="what">1. What this does</h2>
+  <p>
+    You upload encrypted material (a "bundle"). You define a policy: a
+    check-in schedule, a grace period, and a list of destinations. As long
+    as you check in on time, nothing happens. If you miss your check-in and
+    the grace period expires, the release pipeline runs automatically:
+    decrypts your bundle in a gated worker process, packages it with a
+    signed manifest, and delivers it to the destinations you preauthorized.
+  </p>
+  <p>
+    That's the whole product. Everything else — mobile apps, trusted
+    contacts, threshold keys — is either a planned extension or a feature
+    not relevant to most users.
+  </p>
+</section>
+
+<section>
+  <h2 id="consequences">2. Real-world consequences</h2>
+  <p>
+    Before you create a policy, sit with the following scenarios:
+  </p>
+  <h3>You forget to check in once.</h3>
+  <p>
+    The system starts sending warnings. If your grace period is reasonable
+    (72+ hours is a sensible floor), you have plenty of time to check in
+    the next day and cancel the release. <strong>The timer resets fully on
+    any check-in.</strong>
+  </p>
+  <h3>You go on vacation and forget.</h3>
+  <p>
+    Same result, except if you also miss every warning email (because you
+    didn't bring your passkey device, or your destination mail server
+    blocked us) you may discover on returning that the release has fired.
+    This will not feel OK. Mitigations:
+  </p>
+  <ul>
+    <li>Before travel, consider suspending the policy.</li>
+    <li>Increase the grace period for your typical away-from-home span.</li>
+    <li>Bring your passkey (most password managers sync across devices).</li>
+  </ul>
+  <h3>You are detained or arrested.</h3>
+  <p>
+    This is the main use case. The system runs. Material is released
+    according to your policy. There is nothing you can do from custody —
+    which is the point. See §6 for how to think about this in advance.
+  </p>
+  <h3>You die.</h3>
+  <p>
+    Also the main use case. Same outcome. If you die in an accident rather
+    than adversarially, you may want to configure a long grace period
+    (weeks) so family has time to find your check-in device and manually
+    suspend before release. Or configure a trusted contact.
+  </p>
+  <h3>You configure something badly and you're fine.</h3>
+  <p>
+    Say you pick a 1-day interval, forget it's Saturday, sleep in. Your
+    bundle gets released. We cannot give it back. The platform enforces a
+    <strong>24-hour cooldown between first-arm and the timer actually
+    starting</strong>, and a <strong>minimum 24-hour grace period</strong>,
+    but it does not save you from a determined configuration mistake.
+  </p>
+</section>
+
+<section>
+  <h2 id="check-in">3. Check-ins: how they work</h2>
+  <p>
+    A check-in is one authenticated action that tells the system "I'm
+    still here; reset my timer." There are two paths:
+  </p>
+  <ul>
+    <li>
+      <strong>Browser check-in</strong> (current web UI): log in with your
+      passkey, click the "I'm checking in" button on your dashboard. Resets
+      every armed policy you own in a single click.
+    </li>
+    <li>
+      <strong>Hardware-key check-in</strong> (planned, mobile app): your
+      phone's Secure Enclave / StrongBox signs a server-issued nonce. More
+      replay-resistant. Not yet available.
+    </li>
+  </ul>
+  <p>
+    Browsers check-ins are session-authenticated only — they require a
+    valid logged-in session but not a fresh passkey prompt. This makes
+    them easy (one click) but slightly less strong than the hardware-key
+    protocol. For most users this is fine. If you want the stronger
+    guarantee, wait for the mobile app.
+  </p>
+</section>
+
+<section>
+  <h2 id="states">4. The state machine</h2>
+  <p>Your policy is always in exactly one of these states:</p>
+  <dl class="kv">
+    <dt><strong>draft</strong></dt><dd>Created but not armed. Timer doesn't run. Safe to edit.</dd>
+    <dt><strong>armed</strong></dt><dd>24-hour cooldown after first arm. The timer is running but there's a grace window before the state becomes "healthy".</dd>
+    <dt><strong>healthy</strong></dt><dd>Timer is counting down normally.</dd>
+    <dt><strong>warning</strong></dt><dd>You're inside the 24-hour pre-due window. Warnings are being sent.</dd>
+    <dt><strong>grace</strong></dt><dd>The due date passed and you haven't checked in. You have until the grace expiry to check in and avoid release.</dd>
+    <dt><strong>hold</strong></dt><dd>A trusted contact paused the countdown (planned feature).</dd>
+    <dt><strong>triggered</strong></dt><dd>Grace expired. Release pipeline starts.</dd>
+    <dt><strong>releasing</strong></dt><dd>Bundle is being decrypted, packaged, and delivered.</dd>
+    <dt><strong>released</strong></dt><dd>Terminal. Release completed.</dd>
+    <dt><strong>failed_partial</strong></dt><dd>Terminal. Some destinations succeeded, some did not.</dd>
+    <dt><strong>suspended</strong></dt><dd>You paused the policy. Timer does not run. Reversible via "resume".</dd>
+    <dt><strong>revoked</strong></dt><dd>Terminal. Policy is cancelled. Cannot be resumed.</dd>
+  </dl>
+  <p>
+    Any check-in moves you from healthy/warning/grace/hold back to healthy
+    with a fresh countdown. Any state transition is recorded in the
+    tamper-evident audit log.
+  </p>
+</section>
+
+<section>
+  <h2 id="hygiene">5. Operational hygiene</h2>
+  <p>
+    Good hygiene compounds. Bad hygiene is usually what exposes a source,
+    not the crypto.
+  </p>
+  <h3>Browser and network</h3>
+  <ul>
+    <li>Use Tor Browser with default security settings. A dedicated Tails or Whonix VM is better.</li>
+    <li>Never log in from a network that can be traced to you — work WiFi, corporate VPN, your home ISP under your real name.</li>
+    <li>Disable JavaScript where possible. Passkey ceremony and bundle encryption need it; read pages do not.</li>
+  </ul>
+  <h3>Identity</h3>
+  <ul>
+    <li>Use an email address you don't use anywhere else. A disposable mailbox on a privacy-respecting provider works; a throwaway Tor-friendly relay is better.</li>
+    <li>Your passkey is your identity. Storing it in a password manager you use for other accounts links this account to everything else that manager holds. Consider a hardware security key used only for this purpose.</li>
+  </ul>
+  <h3>Bundle contents</h3>
+  <ul>
+    <li><strong>Strip metadata.</strong> <code>exiftool -all= file.jpg</code> for images. For documents, re-export to PDF and check properties. For audio/video, use <code>ffmpeg -map_metadata -1</code>.</li>
+    <li>Assume filenames are readable to the release worker operator. Name them neutrally.</li>
+    <li>Assume the decrypted bundle is eventually readable by anyone who can compromise the release server. Consider dividing material into multiple bundles with different release modes and destinations.</li>
+  </ul>
+  <h3>Destinations</h3>
+  <ul>
+    <li>Prefer recipients on services that don't require revealing your identity to register (e.g., ProtonMail, SecureDrop).</li>
+    <li>If you use a webhook, that webhook's URL is visible to anyone with DB access. Pick a URL that doesn't embed identifying information.</li>
+    <li>Public landing pages are served from this server's object storage. If the operator hosting this server is compromised, the public URL becomes controllable by the attacker. Mirror material to destinations you control if the release content must survive.</li>
+  </ul>
+</section>
+
+<section>
+  <h2 id="detained">6. If you are detained or injured</h2>
+  <h3>Before:</h3>
+  <ul>
+    <li>Pick a check-in interval short enough that meaningful events get surfaced but long enough that normal life interruptions don't trigger releases. For most journalists/dissidents: 3–14 days.</li>
+    <li>Configure a grace period you believe you can survive without check-in: hours in prison vs. days sick. 72 h is the default; 168 h (1 week) is not unreasonable.</li>
+    <li>Stage your release. Consider two policies: one "light" policy with a short interval that alerts trusted contacts, and a "heavy" policy with a longer interval that publishes broadly only if the alerts don't bring you back.</li>
+    <li>Tell at least one trusted person that this switch exists, what triggers it, and what they should do if they can reach you. They do <em>not</em> need credentials; they just need to know the plan.</li>
+  </ul>
+  <h3>During:</h3>
+  <p>Nothing you can do. The switch does its thing.</p>
+  <h3>After (if you return):</h3>
+  <ul>
+    <li>If the release has not yet fired: check in. Normal life resumes.</li>
+    <li>If the release has fired: treat it as a terminal event. You cannot unpublish. The signed manifest is public; mirrors may exist.</li>
+    <li>Review the audit log to see exactly what happened and when.</li>
+  </ul>
+</section>
+
+<section>
+  <h2 id="recovery">7. Account recovery and passkeys</h2>
+  <p>
+    There is no password recovery. There is no "email me a reset link."
+    If you lose your passkey, you lose the account.
+  </p>
+  <p>
+    Mitigation:
+  </p>
+  <ul>
+    <li>Register more than one passkey on more than one device (planned; currently single passkey per account).</li>
+    <li>Store your passkey in a password manager that has its own recovery flow (1Password, Bitwarden with an emergency contact, etc.).</li>
+    <li>Use a hardware key with a clearly-labeled backup hardware key kept somewhere safe.</li>
+  </ul>
+  <p>
+    Losing the account means the policies you configured cease to be
+    manageable. <strong>Armed policies keep running</strong> and will
+    release on schedule if you cannot check in, because the state machine
+    does not care whether you're logged in — it cares whether you checked
+    in. This may be desirable (you configured the switch precisely for the
+    case where you cannot log in) or undesirable (you wanted to cancel
+    before release). Design accordingly.
+  </p>
+</section>
+
+<section>
+  <h2 id="limits">8. Platform limitations (honest)</h2>
+  <p>
+    Things this service does not currently do, that you may expect:
+  </p>
+  <ul>
+    <li>
+      <strong>No threshold key split.</strong> The release key lives as one
+      file on one server. A sufficiently powerful attacker who compromises
+      the operator's host can read your bundles without triggering a
+      release. Work to split this across multiple independent clouds is
+      planned but not shipped.
+    </li>
+    <li>
+      <strong>No trusted-contact workflow.</strong> You cannot currently
+      designate a human who can pause a grace countdown. Planned.
+    </li>
+    <li>
+      <strong>No native mobile app.</strong> All check-ins are via this
+      web UI. A native app with hardware-key-signed check-ins is the next
+      major milestone.
+    </li>
+    <li>
+      <strong>No end-to-end encryption to destinations.</strong> The
+      release worker decrypts your bundle, packages it, and delivers it in
+      plaintext to destinations (email, webhook, public page). If you want
+      recipient-side encryption, encrypt your material <em>again</em>
+      before uploading with a PGP key or age recipient; include decryption
+      instructions in the bundle.
+    </li>
+    <li>
+      <strong>No guarantee of availability during a release.</strong>
+      External watchdog alerts you (operator) if the scheduler dies, but
+      no SLA is offered.
+    </li>
+  </ul>
+</section>
+
+<section>
+  <h2 id="verify">9. Verifying a release out-of-band</h2>
+  <p>
+    Every release artifact is accompanied by <code>manifest.json</code>
+    and <code>manifest.sig</code>. The manifest includes the service
+    public key (base64url). Anyone can verify the release was actually
+    produced by this server:
+  </p>
+  <pre>
+# 1. Grab the service public key out-of-band (from this help page, pinned in your notes).
+# 2. Fetch the release's manifest.json and manifest.sig.
+# 3. Verify with any Ed25519 tool. Example in Python:
+python3 - &lt;&lt;'EOF'
+import base64, json
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+m = open('manifest.json','rb').read()
+sig = open('manifest.sig','rb').read()
+pk_b64 = json.loads(m)['service_pubkey_b64']
+pk = Ed25519PublicKey.from_public_bytes(base64.urlsafe_b64decode(pk_b64 + '=='))
+pk.verify(sig, m)
+print('OK')
+EOF
+  </pre>
+  <p>
+    If you have a trusted record of the service public key, a successful
+    verification proves the release came from the expected service at the
+    expected time. If the service's public key ever rotates, verify the
+    new key out-of-band <em>before</em> trusting releases signed by it.
+  </p>
+</section>
+
+<section>
+  <h2 id="faq">10. FAQ</h2>
+
+  <h3>Can the operator read my bundle?</h3>
+  <p>
+    Not arbitrarily. Your bundle is encrypted on your device with a random
+    key, which is then encrypted for the server's release key. At release
+    time (and only at release time), the release worker decrypts the
+    bundle. A malicious or compromised operator could in principle trigger
+    a release early to read the bundle — but every such trigger is
+    recorded in the tamper-evident audit log, and the external watchdog
+    makes silent abuse detectable. Until the threshold-key work ships,
+    this is the real trust model.
+  </p>
+
+  <h3>Why not PGP?</h3>
+  <p>
+    PGP-encrypt your material before uploading if you want
+    recipient-side encryption. The platform's own encryption is about
+    protecting material <em>in transit and at rest on the server</em>,
+    not about end-to-end delivery to a known third party. Both are
+    compatible; layer them.
+  </p>
+
+  <h3>What happens if the server disappears entirely?</h3>
+  <p>
+    Your armed policies stop running. No release fires. This is a
+    liveness failure, not a confidentiality failure. The external
+    watchdog will alert the operator; recovery is in their runbook.
+    For your threat model this may be acceptable (you wanted the material
+    to remain secret) or not (you wanted it to release no matter what).
+    If the latter: run your own instance, federated with mirrors.
+  </p>
+
+  <h3>Can I see the source code?</h3>
+  <p>
+    Depending on which instance you're using, source may or may not be
+    publicly available. Source availability does not change the security
+    model materially: what matters is that your bundle is encrypted with
+    keys the server cannot reach except during a properly-gated release,
+    and that the release process is auditable. Both are true regardless of
+    whether you can read the server code.
+  </p>
+
+  <h3>Is this legal?</h3>
+  <p>
+    Uploading material you are legally authorized to release is legal in
+    most jurisdictions. Uploading material obtained illegally is subject
+    to whatever laws apply to that material. Using a deadman's switch to
+    release material on a delay does not change the underlying legality
+    of the material itself. <strong>This service is not your lawyer.</strong>
+  </p>
+
+  <h3>How do I delete my account?</h3>
+  <p>
+    Revoke all policies and log out. Deleting the underlying user row is
+    not currently exposed in the UI but is planned; for now, contact the
+    operator of this instance.
+  </p>
+</section>
+
+<section>
+  <p class="muted">
+    This document is part of the software. If you're reading it on a
+    different server's deployment, its guarantees reflect that server, not
+    this one. If anything in it contradicts something you see elsewhere
+    about this product, trust this document.
+  </p>
+</section>
+{{end}}

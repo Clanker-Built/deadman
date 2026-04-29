@@ -1,0 +1,109 @@
+{{define "content"}}
+<section>
+  <h1>{{.Policy.Title}}</h1>
+  <p class="muted">Created {{.Policy.CreatedAt.Format "2006-01-02"}} · State:
+    <span class="state state-{{.Policy.State}}">{{.Policy.State}}</span>
+  </p>
+  {{if .Policy.Description}}<p>{{.Policy.Description}}</p>{{end}}
+
+  <dl class="kv">
+    {{with .Runtime}}
+      <dt>Next due</dt><dd>{{if .NextDueAt}}{{.NextDueAt.Format "2006-01-02 15:04 MST"}}{{else}}—{{end}}</dd>
+      <dt>Last check-in</dt><dd>{{if .LastCheckInAt}}{{.LastCheckInAt.Format "2006-01-02 15:04 MST"}}{{else}}—{{end}}</dd>
+      <dt>Grace expires</dt><dd>{{if .GraceExpiresAt}}{{.GraceExpiresAt.Format "2006-01-02 15:04 MST"}}{{else}}—{{end}}</dd>
+      <dt>Trigger at</dt><dd>{{if .TriggerAt}}<strong>{{.TriggerAt.Format "2006-01-02 15:04 MST"}}</strong>{{else}}—{{end}}</dd>
+    {{end}}
+  </dl>
+
+  {{if .TokenWarnings}}
+    <div class="warn-block">
+      <h3>Destination tokens expiring soon</h3>
+      <ul>
+        {{range .TokenWarnings}}<li>{{.}}</li>{{end}}
+      </ul>
+      <p class="muted">
+        A release fired after a token expires may fail to deliver to that
+        destination. Renew the token before expiry.
+      </p>
+    </div>
+  {{end}}
+
+  {{if or (eq .Policy.State "draft") (eq .Policy.State "suspended")}}
+    <h2>Attachments</h2>
+    <p class="muted">
+      You can edit bundles and destinations while this policy is
+      {{.Policy.State}}. Schedule fields are frozen in the signed version;
+      to change them, revoke and create a new policy.
+    </p>
+    <form method="POST" action="/ui/policies/{{.Policy.ID}}/attachments" class="stack">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      {{if .Bundles}}
+      <fieldset>
+        <legend>Bundles</legend>
+        {{range .Bundles}}
+          <label class="radio">
+            <input type="checkbox" name="bundle_ids" value="{{.ID}}"{{if .Attached}} checked{{end}}>
+            {{if .Label}}{{.Label}}{{else}}(unlabeled){{end}} — {{.SizeHuman}}
+          </label>
+        {{end}}
+      </fieldset>
+      {{end}}
+      {{if .Destinations}}
+      <fieldset>
+        <legend>Destinations</legend>
+        {{range .Destinations}}
+          <label class="radio">
+            <input type="checkbox" name="destination_ids" value="{{.ID}}"{{if .Attached}} checked{{end}}>
+            <strong>{{.Kind}}</strong> — {{.Label}}{{if .ConfigSummary}} ({{.ConfigSummary}}){{end}}
+          </label>
+        {{end}}
+      </fieldset>
+      {{end}}
+      <button type="submit" class="btn primary">Save attachments</button>
+    </form>
+  {{end}}
+
+  <div class="actions">
+    {{if eq .Policy.State "draft"}}
+      <form method="POST" action="/ui/policies/{{.Policy.ID}}/arm" class="inline">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button type="submit" class="btn primary">Arm policy</button>
+      </form>
+      <p class="muted">Arming applies a 24-hour activation cooldown before
+      the timer begins. You can cancel during that window.</p>
+    {{else if or (eq .Policy.State "healthy") (eq .Policy.State "warning") (eq .Policy.State "grace") (eq .Policy.State "hold")}}
+      <form method="POST" action="/ui/policies/{{.Policy.ID}}/suspend" class="inline">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button type="submit" class="btn">Suspend</button>
+      </form>
+    {{else if eq .Policy.State "suspended"}}
+      <form method="POST" action="/ui/policies/{{.Policy.ID}}/resume" class="inline">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button type="submit" class="btn primary">Resume</button>
+      </form>
+    {{end}}
+
+    {{if ne .Policy.State "revoked"}}
+      <form method="POST" action="/ui/policies/{{.Policy.ID}}/revoke" class="inline"
+            onsubmit="return confirm('Revoke this policy permanently? This cannot be undone.');">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button type="submit" class="btn danger">Revoke (irreversible)</button>
+      </form>
+    {{end}}
+  </div>
+
+  {{if .DevMode}}
+  <div class="danger-zone">
+    <h3>Dev tools (DEADMAN_ENV=dev)</h3>
+    <p class="muted">Rewinds deadlines into the past. Next scheduler tick will
+    march the policy through warning → grace → triggered, then the release
+    worker fires. For testing only; never enabled in production builds.</p>
+    <form method="POST" action="/ui/policies/{{.Policy.ID}}/force-trigger" class="inline"
+          onsubmit="return confirm('Force this policy to trigger NOW? This will execute the real release pipeline against configured destinations.');">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <button type="submit" class="btn danger">Force trigger now</button>
+    </form>
+  </div>
+  {{end}}
+</section>
+{{end}}

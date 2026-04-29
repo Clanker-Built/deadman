@@ -1,0 +1,47 @@
+{{define "content"}}
+<section>
+  <h1>Your account</h1>
+
+  <h2>Export your data</h2>
+  <p class="muted">
+    Download every metadata record this server has tied to your account:
+    user row, passkey credentials (public material only), policies,
+    bundle metadata (NOT ciphertext), destinations, and audit events
+    where you were the actor or subject. Sensitive recipient addresses
+    appear in destination configs — treat the file accordingly.
+  </p>
+  <p>
+    <a href="/ui/account/export.json" class="linkish">
+      Download deadman-account-export.json
+    </a>
+  </p>
+
+  <h2>Delete your account</h2>
+  <p class="muted">
+    <strong>Permanent.</strong> Deletes your user row, all passkey
+    credentials, devices, sessions, policies, bundle metadata, and
+    destinations from the server's database. Bundle ciphertext in
+    object storage is not automatically purged — operators with
+    bucket access must delete it separately if asked.
+  </p>
+  <p class="muted">
+    Audit events you generated remain in the hash-chained ledger with
+    your user ID intact (the chain must not be broken). They no longer
+    link to a user row, but the events themselves persist for
+    integrity reasons. An <code>account.deleted</code> event is
+    appended at deletion time.
+  </p>
+  <p class="muted">
+    Requires a recent step-up authentication (within 5 minutes). If
+    yours is stale you'll be redirected to re-confirm first.
+  </p>
+  <form method="POST" action="/ui/account/delete" class="stacked">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label>
+      Type your email (<code>{{.UserEmail}}</code>) to confirm:
+      <input type="email" name="confirm_email" autocomplete="off" required>
+    </label>
+    <button type="submit" class="danger">Delete my account permanently</button>
+  </form>
+</section>
+{{end}}

@@ -1,0 +1,159 @@
+{{define "content"}}
+<section class="hero">
+  <h1>A deadman's switch, built for people in danger.</h1>
+  <p class="lede">
+    You upload sensitive material. You set a schedule. If you stop checking
+    in — because you've been detained, injured, or killed — the material is
+    released automatically to recipients, channels, or a public page you
+    configured in advance.
+  </p>
+  <p class="lede muted">
+    This tool is primarily for whistle-blowers, journalists with sensitive
+    sources, dissidents, and legal counsel who need a documented
+    controlled-release mechanism. If you're here for any other reason,
+    read carefully before proceeding.
+  </p>
+</section>
+
+<section class="warnings">
+  <h2>Read this before creating an account.</h2>
+
+  <div class="warn-block">
+    <h3>1. Release is irreversible.</h3>
+    <p>
+      Once a release fires, material is delivered and — depending on your
+      configuration — <strong>published to the open internet</strong>.
+      There is no recall. No "unpublish." No second chance. Mirrors and
+      archives may preserve the release long after you change your mind.
+    </p>
+  </div>
+
+  <div class="warn-block">
+    <h3>2. You are responsible for checking in, on time, every time.</h3>
+    <p>
+      Missing a check-in — for any reason — starts the countdown. Vacation,
+      a broken laptop, a misread timezone, a hospital stay: all valid human
+      mistakes, all treated identically by the state machine. Set intervals
+      you can meet even on your worst normal week. Use the grace period
+      generously. Assume you <em>will</em> forget once.
+    </p>
+  </div>
+
+  <div class="warn-block">
+    <h3>3. Operational hygiene is your job, not this tool's.</h3>
+    <ul>
+      <li>Use Tor Browser. Do not access this site from a network that can
+          be linked to you.</li>
+      <li>Strip metadata from anything you upload (EXIF, PDF author fields,
+          document properties, filesystem timestamps). The release worker
+          does not sanitize your material; whatever you upload is what gets
+          released.</li>
+      <li>Don't reuse the email you use here anywhere else. A passkey is
+          tied to a real device or vault — treat it as an identity.</li>
+      <li>Your bundle is encrypted on your device before upload. Your
+          passkey unlocks your account. If you lose the passkey and haven't
+          set up a recovery contact, <strong>your account is gone</strong>.
+          The operator cannot help you recover it — and wouldn't even if
+          they could, because that would defeat the security model.</li>
+    </ul>
+  </div>
+
+  <div class="warn-block">
+    <h3>4. You are trusting the operator of this server with a limited but real capability.</h3>
+    <p>
+      The material you upload is encrypted on your device with a key the
+      server never sees in plaintext. Your payload cannot be read arbitrarily
+      by the operator or their cloud providers.
+    </p>
+    <p>
+      However, at release time the server decrypts your bundle as part of the
+      pipeline. The operator, if compromised, could in principle read any
+      bundle whose release they can force. Every access of this kind is
+      logged in a tamper-evident chain, and an external verifier watches the
+      scheduler for unexpected activity — but if your threat model includes
+      nation-state compromise of this specific server, <strong>do not use
+      this service</strong>. Run your own instance.
+    </p>
+    <p class="muted">
+      Future versions will split the release key across multiple independent
+      clouds so no single operator has full decrypt capability. That work is
+      planned but not yet live.
+    </p>
+  </div>
+
+  <div class="warn-block">
+    <h3>5. This platform cannot protect you from yourself.</h3>
+    <p>
+      If you configure a policy with a 1-day interval and full-public
+      release, and then miss a check-in because you overslept: the material
+      goes out. The platform enforces safety cooldowns and confirmation
+      steps, but it cannot override your deliberate decisions. If you are
+      not sure what you want, start with <em>private release to trusted
+      recipients</em> and graduate to public release only after you've
+      lived with the tool for weeks.
+    </p>
+  </div>
+
+  <div class="warn-block">
+    <h3>6. Third-party platforms are outside our control.</h3>
+    <p>
+      If your release includes a webhook, email, or public page, we cannot
+      guarantee the third party will accept it, keep it live, or avoid
+      censoring it. Plan for your release to be taken down quickly. If
+      durability matters, pre-stage copies with journalists you trust.
+    </p>
+  </div>
+</section>
+
+<section class="cta-panel">
+  <p class="cta">
+    <a class="btn primary" href="/ui/help">Read the full help first</a>
+    <a class="btn" href="/ui/register">I've read this — create my account</a>
+    <a class="btn" href="/ui/login">Log in to an existing account</a>
+  </p>
+</section>
+
+<section class="how">
+  <h2>How it actually works</h2>
+  <ol>
+    <li>Register with a passkey. No passwords. No SMS. No phone number required.</li>
+    <li>Upload one or more bundles. Your files are encrypted in your browser before leaving your machine.</li>
+    <li>Add destinations: named recipients (email), your own webhook, or a public landing page.</li>
+    <li>Create a policy: how often you check in, how long the grace period is, which bundles release to which destinations.</li>
+    <li>Arm the policy. A 24-hour activation cooldown starts; you can cancel during that window.</li>
+    <li>Check in on time. One click, any time. Resets the clock on every armed policy.</li>
+    <li>If you ever stop checking in: warnings go out, grace begins, eventually the release fires.</li>
+  </ol>
+</section>
+
+<section class="pillars">
+  <div>
+    <h2>Zero-knowledge payload</h2>
+    <p>Your files are encrypted with keys generated on your device. The
+       server stores ciphertext only. Operators cannot browse your data.</p>
+  </div>
+  <div>
+    <h2>Tamper-evident</h2>
+    <p>Every state change is signed and hash-chained. An external verifier
+       independently watches the scheduler. Silent failures are detectable.</p>
+  </div>
+  <div>
+    <h2>Multi-cloud durability</h2>
+    <p>Your encrypted bundles live on two independent object-storage
+       providers. A primary outage does not block release; automatic
+       consistency checks detect drift.</p>
+  </div>
+</section>
+
+<section class="warn-block">
+  <h3>If this is not a fit for you:</h3>
+  <p>
+    Don't use it. A controlled-release system is a blunt instrument. For
+    most people, sharing a password with a trusted lawyer or loved one,
+    using a commercial legacy service, or simply publishing your material
+    now is the right answer. This tool exists for cases where none of those
+    work — because the material must remain secret unless you stop being
+    able to keep it so.
+  </p>
+</section>
+{{end}}

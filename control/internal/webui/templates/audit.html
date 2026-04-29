@@ -1,0 +1,50 @@
+{{define "content"}}
+<section>
+  <h1>Activity log</h1>
+  <p class="muted">
+    Your own audit trail — the events where you or your policies, bundles,
+    devices, or destinations were the subject. Other users' events are not
+    shown. Every row is part of a hash-chained, signed ledger; you can
+    verify the chain out-of-band with the service public key.
+  </p>
+
+  {{if .AuditEvents}}
+    <table class="policies audit-table">
+      <thead><tr>
+        <th>When</th><th>What</th><th>Actor</th><th>Subject</th><th></th>
+      </tr></thead>
+      <tbody>
+      {{range .AuditEvents}}
+        <tr>
+          <td>{{.WhenHuman}}</td>
+          <td><code>{{.EventType}}</code></td>
+          <td>{{.ActorSummary}}</td>
+          <td>{{.SubjectSummary}}</td>
+          <td>
+            <details class="help">
+              <summary>details</summary>
+              <div>
+                <dl class="kv small">
+                  <dt>seq</dt><dd>{{.Seq}}</dd>
+                  <dt>event id</dt><dd><code>{{.EventID}}</code></dd>
+                  <dt>prev_hash</dt><dd><code>{{.PrevHashHex}}</code></dd>
+                  <dt>payload_hash</dt><dd><code>{{.PayloadHashHex}}</code></dd>
+                </dl>
+                {{if .PayloadPretty}}
+                <pre>{{.PayloadPretty}}</pre>
+                {{end}}
+              </div>
+            </details>
+          </td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    <p class="muted">
+      Showing {{len .AuditEvents}} events, newest first.
+    </p>
+  {{else}}
+    <p>No events yet. Activity will appear here as you use the platform.</p>
+  {{end}}
+</section>
+{{end}}

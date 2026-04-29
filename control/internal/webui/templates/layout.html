@@ -1,0 +1,45 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>{{.Title}} · Deadman</title>
+  <link rel="stylesheet" href="/ui/static/style.css" nonce="{{.Nonce}}">
+</head>
+<body>
+  <header>
+    <a href="/ui/" class="brand">Deadman</a>
+    <nav>
+      <a href="/ui/help">Help</a>
+      {{if .UserEmail}}
+        <span class="user">{{.UserEmail}}</span>
+        <a href="/ui/dashboard">Dashboard</a>
+        <a href="/ui/destinations">Destinations</a>
+        <a href="/ui/audit">Activity</a>
+        <a href="/ui/account">Account</a>
+        {{if .IsAdmin}}<a href="/ui/admin/" class="admin-link">Admin</a>{{end}}
+        <form method="POST" action="/ui/logout" class="inline">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <button type="submit" class="linkish">Log out</button>
+        </form>
+      {{else}}
+        <a href="/ui/login">Log in</a>
+        <a href="/ui/register">Create account</a>
+      {{end}}
+    </nav>
+  </header>
+  <main>
+    {{if .Flash}}<div class="flash {{.FlashKind}}">{{.Flash}}</div>{{end}}
+    {{template "content" .}}
+  </main>
+  <footer>
+    <p>
+      Deadman is a zero-knowledge controlled-release platform. Your payload is
+      encrypted on your device; operators cannot read it. Actions labeled
+      <strong>irreversible</strong> cannot be undone once executed.
+    </p>
+    <p class="muted">Build runs without tracking, third-party fonts, or analytics.</p>
+  </footer>
+</body>
+</html>{{end}}

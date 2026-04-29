@@ -1,0 +1,91 @@
+{{define "content"}}
+<section class="admin">
+  <nav class="admin-nav">
+    <a href="/ui/admin/">Overview</a>
+    <a href="/ui/admin/users" class="current">Users</a>
+    <a href="/ui/admin/policies">Policies</a>
+    <a href="/ui/admin/storage">Storage</a>
+    <a href="/ui/admin/ledger">Ledger</a>
+    <a href="/ui/admin/metrics">Metrics</a>
+    <a href="/ui/admin/backups">Backups</a>
+    <a href="/ui/admin/config">Config</a>
+    <a href="/ui/admin/vault">Vault</a>
+  </nav>
+  {{with .Admin.SelectedUser}}
+  <h1>{{.Email}}</h1>
+  <dl class="kv">
+    <dt>ID</dt><dd><code>{{.ID}}</code></dd>
+    <dt>Display name</dt><dd>{{.DisplayName}}</dd>
+    <dt>Status</dt><dd>{{.Status}}</dd>
+    <dt>Admin</dt><dd>{{if .IsAdmin}}yes{{else}}no{{end}}</dd>
+    <dt>Created</dt><dd>{{.CreatedAt.Format "2006-01-02 15:04 UTC"}}</dd>
+  </dl>
+
+  <h2>Actions</h2>
+  <p class="muted">
+    Admin actions below are logged to the signed audit ledger. You cannot
+    promote or demote yourself.
+  </p>
+  <div class="action-row">
+    {{if .IsAdmin}}
+      <form method="POST" action="/ui/admin/users/{{.ID}}/demote" class="inline">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button type="submit">Demote from admin</button>
+      </form>
+    {{else}}
+      <form method="POST" action="/ui/admin/users/{{.ID}}/promote" class="inline">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button type="submit">Promote to admin</button>
+      </form>
+    {{end}}
+    <form method="POST" action="/ui/admin/users/{{.ID}}/force-logout" class="inline">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <button type="submit">Force logout (revoke all sessions)</button>
+    </form>
+    <form method="POST" action="/ui/admin/users/{{.ID}}/suspend-all" class="inline">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <button type="submit" class="danger">Suspend all armed policies</button>
+    </form>
+  </div>
+  {{end}}
+
+  <h2>Policies ({{len .Admin.UserPolicies}})</h2>
+  {{if .Admin.UserPolicies}}
+  <table class="policies">
+    <thead><tr><th>Title</th><th>State</th></tr></thead>
+    <tbody>
+    {{range .Admin.UserPolicies}}
+      <tr><td>{{.Title}}</td><td>{{.State}}</td></tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}
+    <p class="muted">No policies.</p>
+  {{end}}
+
+  <h2>Bundles ({{len .Admin.UserBundles}})</h2>
+  {{if .Admin.UserBundles}}
+  <table class="policies">
+    <thead><tr><th>Label</th><th>Scheme</th><th>Size</th><th>Uploaded</th></tr></thead>
+    <tbody>
+    {{range .Admin.UserBundles}}
+      <tr>
+        <td>{{.Label}}</td>
+        <td><code>{{.WrapScheme}}</code></td>
+        <td>{{.SizeHuman}}</td>
+        <td>{{.CreatedAt.Format "2006-01-02"}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  <p class="muted">
+    Bundles are stored as ciphertext. You cannot decrypt them; neither can the
+    server without the user's policy triggering.
+  </p>
+  {{end}}
+
+  <h2>Destinations</h2>
+  <p>{{.Admin.UserDestCount}} active destinations. Config is hidden to avoid
+     revealing recipient lists or webhook URLs to the operator.</p>
+</section>
+{{end}}

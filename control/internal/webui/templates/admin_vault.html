@@ -1,0 +1,70 @@
+{{define "content"}}
+<section class="admin">
+  <h1>Admin · Vault</h1>
+  <nav class="admin-nav">
+    <a href="/ui/admin/">Overview</a>
+    <a href="/ui/admin/users">Users</a>
+    <a href="/ui/admin/policies">Policies</a>
+    <a href="/ui/admin/storage">Storage</a>
+    <a href="/ui/admin/ledger">Ledger</a>
+    <a href="/ui/admin/metrics">Metrics</a>
+    <a href="/ui/admin/backups">Backups</a>
+    <a href="/ui/admin/config">Config</a>
+    <a href="/ui/admin/vault" class="current">Vault</a>
+  </nav>
+
+  {{with .Admin.VaultStatus}}
+    {{if .HasVault}}
+      <dl class="kv">
+        <dt>Status</dt>
+        <dd>
+          {{if .Unlocked}}
+            <span class="state ok">unlocked</span>
+          {{else}}
+            <span class="state warn">locked</span>
+          {{end}}
+        </dd>
+        <dt>Share 3 fingerprint</dt>
+        <dd><code>{{.Share3FingerprintHex}}</code></dd>
+      </dl>
+
+      {{if .Unlocked}}
+        <h2>Lock the vault</h2>
+        <p>Clearing the in-process private key. Triggered releases will stall
+           until you unlock again. Useful before a scheduled maintenance
+           window or if you suspect the host has been compromised.</p>
+        <form method="POST" action="/ui/admin/vault/lock">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <button type="submit" class="danger">Lock now</button>
+        </form>
+      {{else}}
+        <h2>Unlock with passphrases</h2>
+        <p class="muted">
+          Passphrases are NOT logged. A failed attempt is logged without the
+          passphrase text. After N consecutive failures, consider whether
+          the host is under attack.
+        </p>
+        <form method="POST" action="/ui/admin/vault/unlock">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <label>
+            Passphrase A (custodian A)
+            <input type="password" name="passphrase_a" autocomplete="off" required>
+          </label>
+          <label>
+            Passphrase B (custodian B)
+            <input type="password" name="passphrase_b" autocomplete="off" required>
+          </label>
+          <button type="submit">Unlock</button>
+        </form>
+        <h3>Recovery</h3>
+        <p>If one passphrase is lost, use the offline recovery share
+           (share 3) — recovery is not yet available via the web UI. See
+           Runbook §6a for the programmatic path until the CLI ships.</p>
+      {{end}}
+    {{else}}
+      <p>This deployment is running in legacy single-key mode. The threshold
+         vault is not in use; see Runbook §6b for migration.</p>
+    {{end}}
+  {{end}}
+</section>
+{{end}}

@@ -1,0 +1,56 @@
+{{define "content"}}
+<section class="admin">
+  <h1>Admin · Policies</h1>
+  <nav class="admin-nav">
+    <a href="/ui/admin/">Overview</a>
+    <a href="/ui/admin/users">Users</a>
+    <a href="/ui/admin/policies" class="current">Policies</a>
+    <a href="/ui/admin/storage">Storage</a>
+    <a href="/ui/admin/ledger">Ledger</a>
+    <a href="/ui/admin/metrics">Metrics</a>
+    <a href="/ui/admin/backups">Backups</a>
+    <a href="/ui/admin/config">Config</a>
+    <a href="/ui/admin/vault">Vault</a>
+  </nav>
+  <p class="muted">
+    Global list sorted by urgency (triggered first, then grace, then soonest
+    due). Suspending a policy here bypasses the user's own signing path and
+    creates a visible gap in the user's hash chain — intentional evidence
+    of operator intervention. Use with care and only when necessary
+    (see Runbook §7).
+  </p>
+
+  {{if .Admin.AllPolicies}}
+  <table class="policies">
+    <thead><tr>
+      <th>User</th><th>Title</th><th>State</th><th>Next due</th><th></th>
+    </tr></thead>
+    <tbody>
+    {{range .Admin.AllPolicies}}
+      <tr>
+        <td><a href="/ui/admin/users/{{.UserID}}">{{.UserEmail}}</a></td>
+        <td>{{.Title}}</td>
+        <td><span class="state {{.State}}">{{.State}}</span></td>
+        <td>{{.NextDue}}</td>
+        <td>
+          {{if eq .State "suspended"}}
+            <form method="POST" action="/ui/admin/policies/{{.ID}}/resume" class="inline">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+              <button type="submit">Resume</button>
+            </form>
+          {{else}}
+            <form method="POST" action="/ui/admin/policies/{{.ID}}/suspend" class="inline">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+              <button type="submit" class="danger">Suspend</button>
+            </form>
+          {{end}}
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}
+    <p>No policies.</p>
+  {{end}}
+</section>
+{{end}}

@@ -1,0 +1,88 @@
+{{define "content"}}
+<section class="admin">
+  <h1>Admin · Backups</h1>
+  <nav class="admin-nav">
+    <a href="/ui/admin/">Overview</a>
+    <a href="/ui/admin/users">Users</a>
+    <a href="/ui/admin/policies">Policies</a>
+    <a href="/ui/admin/storage">Storage</a>
+    <a href="/ui/admin/ledger">Ledger</a>
+    <a href="/ui/admin/metrics">Metrics</a>
+    <a href="/ui/admin/backups" class="current">Backups</a>
+    <a href="/ui/admin/config">Config</a>
+    <a href="/ui/admin/vault">Vault</a>
+  </nav>
+
+  <p class="muted">
+    On-demand <code>pg_dump</code> snapshot of the control-plane database.
+    Output is <code>--format=custom</code> (readable with <code>pg_restore</code>),
+    gzip-compressed, uploaded to object storage. Retention keeps the
+    {{.Admin.BackupKeep}} most recent successful backups; older OK backups
+    are deleted from the bucket automatically. <strong>Restore is a CLI
+    operation</strong> — a one-click restore is how you lose production
+    data. See Runbook §8.
+  </p>
+
+  <h2>Run a backup now</h2>
+  {{if not .Admin.BackupPgDumpOK}}
+    <p class="flash error">
+      <code>pg_dump</code> is not on PATH of the server process. Install it
+      (usually in the <code>postgresql-client</code> package) and restart.
+    </p>
+  {{else if not .Admin.BackupCanRun}}
+    <p class="flash warn">No backup storage destination configured.</p>
+  {{else}}
+    <form method="POST" action="/ui/admin/backups/run" class="inline">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <button type="submit">Run backup</button>
+    </form>
+    <p class="muted">
+      Runs asynchronously. Refresh this page to watch status transition
+      <code>running</code> → <code>ok</code> or <code>failed</code>.
+    </p>
+  {{end}}
+
+  <h2>History</h2>
+  {{if .Admin.Backups}}
+  <table class="policies">
+    <thead><tr>
+      <th>Started</th><th>Status</th><th>Size</th>
+      <th>SHA-256</th><th>Key</th><th></th>
+    </tr></thead>
+    <tbody>
+    {{range .Admin.Backups}}
+      <tr>
+        <td>{{.Started}}</td>
+        <td>
+          {{if eq .Status "ok"}}<span class="state ok">ok</span>
+          {{else if eq .Status "failed"}}<span class="state warn">failed</span>
+          {{else if eq .Status "running"}}<span class="state muted">running…</span>
+          {{else if eq .Status "deleted"}}<span class="state muted">deleted</span>
+          {{else}}{{.Status}}{{end}}
+        </td>
+        <td>{{.SizeHuman}}</td>
+        <td>{{if .SHA256Hex}}<code class="hash">{{.SHA256Hex}}</code>{{end}}</td>
+        <td><code>{{.Key}}</code></td>
+        <td>
+          <details class="help">
+            <summary>details</summary>
+            <div>
+              <dl class="kv small">
+                <dt>id</dt><dd><code>{{.ID}}</code></dd>
+                <dt>bucket</dt><dd><code>{{.Bucket}}</code></dd>
+                <dt>finished</dt><dd>{{.Finished}}</dd>
+                {{if .ActorID}}<dt>actor</dt><dd><code>{{.ActorID}}</code></dd>{{end}}
+                {{if .Error}}<dt>error</dt><dd class="error"><code>{{.Error}}</code></dd>{{end}}
+              </dl>
+            </div>
+          </details>
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}
+    <p>No backups recorded yet.</p>
+  {{end}}
+</section>
+{{end}}

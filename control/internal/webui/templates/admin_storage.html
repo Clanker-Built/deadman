@@ -1,0 +1,77 @@
+{{define "content"}}
+<section class="admin">
+  <h1>Admin · Storage</h1>
+  <nav class="admin-nav">
+    <a href="/ui/admin/">Overview</a>
+    <a href="/ui/admin/users">Users</a>
+    <a href="/ui/admin/policies">Policies</a>
+    <a href="/ui/admin/storage" class="current">Storage</a>
+    <a href="/ui/admin/ledger">Ledger</a>
+    <a href="/ui/admin/metrics">Metrics</a>
+    <a href="/ui/admin/backups">Backups</a>
+    <a href="/ui/admin/config">Config</a>
+    <a href="/ui/admin/vault">Vault</a>
+  </nav>
+
+  {{with .Admin.StorageMetrics}}
+  <div class="stat-grid">
+    <div class="stat"><span class="n">{{.BundlesTotal}}</span><span class="l">bundles</span></div>
+    <div class="stat"><span class="n">{{.BundlesBytes}}</span><span class="l">ciphertext bytes</span></div>
+    <div class="stat"><span class="n">{{.BundlesBackupOK}}</span><span class="l">replicated</span></div>
+    <div class="stat"><span class="n">{{.BundlesNoBackup}}</span><span class="l">primary-only</span></div>
+    <div class="stat"><span class="n">{{.DriftEventsLast30d}}</span><span class="l">drift 30d</span></div>
+    <div class="stat"><span class="n">{{.PrimaryMissing30d}}</span><span class="l">primary missing 30d</span></div>
+  </div>
+  {{if .ReleasedUnsealSource}}
+    <h2>Release unseal source (30 d)</h2>
+    <dl class="kv">
+      {{range $src, $n := .ReleasedUnsealSource}}
+        <dt>{{$src}}</dt><dd>{{$n}}</dd>
+      {{end}}
+    </dl>
+  {{end}}
+  {{end}}
+
+  <h2>Buckets</h2>
+  {{if .Admin.StorageBuckets}}
+  <table class="policies">
+    <thead><tr><th>Role</th><th>Bucket</th></tr></thead>
+    <tbody>
+    {{range .Admin.StorageBuckets}}
+      <tr><td>{{.Role}}</td><td><code>{{.Bucket}}</code></td></tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}
+    <p class="muted">Storage is not configured.</p>
+  {{end}}
+
+  <h2>Consistency incidents</h2>
+  <p class="muted">
+    Drift and primary-missing events from the verifier. Never auto-heal —
+    see Runbook §3 and §4.
+  </p>
+  {{if .Admin.StorageIncidents}}
+  <table class="policies">
+    <thead><tr><th>Seq</th><th>When</th><th>Event</th><th>Bundle</th><th></th></tr></thead>
+    <tbody>
+    {{range .Admin.StorageIncidents}}
+      <tr>
+        <td>{{.Seq}}</td>
+        <td>{{.When}}</td>
+        <td><code>{{.EventType}}</code></td>
+        <td>{{if .SubjectID}}<code>{{.SubjectID}}</code>{{end}}</td>
+        <td>
+          <details class="help"><summary>payload</summary>
+            <pre>{{.PayloadJSON}}</pre>
+          </details>
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}
+    <p>No drift or primary-missing events recorded.</p>
+  {{end}}
+</section>
+{{end}}

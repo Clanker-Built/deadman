@@ -1,0 +1,47 @@
+/control/bin/
+/control/tmp/
+*.exe
+*.test
+*.out
+coverage.txt
+.env
+.env.local
+.DS_Store
+node_modules/
+
+# Local dev key material — MUST NEVER be committed.
+*.pem
+*.key
+release-key.*
+release-vault.json
+service-signing-key.bin
+ops/dev-certs/
+
+# Cross-compile drop zone for setup-onion.sh prebuilt-binary fallback.
+/deadman-control
+/goose
+
+# Per-conversation workflow scratchpad (Claude Code todo / lessons).
+/tasks/
+
+# Android
+/android/.gradle/
+/android/build/
+/android/app/build/
+/android/local.properties
+/android/.idea/
+*.iml
+
+# iOS
+/ios/build/
+/ios/DerivedData/
+/ios/Pods/
+*.xcuserdata/
+xcuserdata/
+
+# Editor
+.vscode/
+.idea/
+
+# Personal dev-tool config (Claude Code workflow instructions).
+CLAUDE.md
