@@ -15,6 +15,7 @@ makes every action it takes verifiable after the fact.
 > support.** See [Status and warranty](#status-and-warranty). It is
 > intentionally not a hosted service — see
 > [docs/operator-risks.md](docs/operator-risks.md).
+
 **Created in memory of mysteriously missing or dead scientists and whistleblowers.**
 
 ---
