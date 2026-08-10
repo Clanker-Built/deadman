@@ -291,7 +291,11 @@ install_go_if_missing() {
 
 check_prereqs() {
   step "Installing prerequisites"
-  apt_install_if_missing tor openssl ca-certificates curl gnupg ufw lsof jq
+  # postgresql-client provides pg_dump, which the admin "Run backup" action
+  # shells out to on the host (the database itself runs in Docker, but the
+  # backup is taken over the loopback connection). Without it, backups fail
+  # with "pg_dump not found on PATH".
+  apt_install_if_missing tor openssl ca-certificates curl gnupg ufw lsof jq postgresql-client
   install_docker_if_missing
   install_go_if_missing
   ok "All prerequisites ready."

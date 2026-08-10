@@ -35,6 +35,20 @@ instance. If you're installing it, see
    storage. Each is single-use.
 3. **Confirm** by entering the current 6-digit code from your app.
 
+![Registration screen — six acknowledgments and the account fields](images/register.png)
+
+The acknowledgments are not boilerplate. Each one describes a property of
+the software that has bitten someone: release is irreversible, armed
+policies keep running if you can't log in, losing both your passphrase and
+your recovery codes is unrecoverable.
+
+![Two-factor setup — manual setup key and ten single-use recovery codes](images/totp-setup.png)
+
+There is no QR code by design (Tor Browser is brittle with inline images and
+the CSP stays strict). Enter the setup key manually into your authenticator
+app, then **save the ten recovery codes offline** — they are shown once and
+are the only way back in if you lose your authenticator.
+
 ## Creating a bundle
 
 `/ui/bundles/new` — pick a label and upload a file. The file is
@@ -48,6 +62,8 @@ Practical limits:
   first.
 - Bundle size cap is set by the operator; defaults are sized for
   documents (megabytes), not media archives.
+
+![New bundle — files are encrypted in the browser before upload](images/bundle-upload.png)
 
 ## Creating a destination
 
@@ -64,6 +80,8 @@ Practical limits:
 
 Destinations can be revoked. A revoked destination is removed from any
 policies that referenced it on next state transition.
+
+![Destinations — a public page, email recipients, or a webhook you control](images/destinations.png)
 
 ## Creating and arming a policy
 
@@ -82,6 +100,8 @@ policies that referenced it on next state transition.
   storage).
 - **Bundles + destinations** — pick which.
 
+![New policy — schedule, release mode, and the bundle/destination pickers](images/policy-new.png)
+
 After creation the policy is `draft`. **Arming** is a deliberate
 action with confirmation:
 
@@ -91,10 +111,15 @@ action with confirmation:
 3. After arming, the policy enters a 24-hour activation cooldown
    (you can cancel during this window). Then the timer starts.
 
+![Policy detail — attachments and the arm / suspend / revoke controls](images/policy-detail.png)
+
 ## Daily operation
 
 - **Check in.** Click **I'm checking in** on the dashboard. Resets
   the timer for every armed policy you own.
+
+  ![Dashboard — a live countdown to the next required check-in](images/dashboard-armed.png)
+
 - **Travel mode.** Suspend a policy via its detail page if you'll
   be unable to check in for a known period. Suspending requires
   step-up reauth.
@@ -102,6 +127,8 @@ action with confirmation:
 - **Audit log.** `/ui/audit` shows every event that touched your
   policies — created, armed, check-in, warning issued, etc. Every row
   is signed and chains to the previous one.
+
+  ![Activity log — a hash-chained, signed record of every action](images/activity-log.png)
 
 ## What happens if you stop checking in
 
@@ -133,6 +160,8 @@ account stays in whatever state it was last in — armed policies
 continue to evaluate; releases will fire if you stop checking in.
 
 ### You want to delete your account
+
+![Account — export every record tied to you, or delete the account](images/account.png)
 
 `/ui/account` → **Delete account**. Requires fresh step-up auth and
 typed-email confirmation. Cascades to your policies, bundles,

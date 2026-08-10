@@ -24,6 +24,7 @@ makes every action it takes verifiable after the fact.
 
 - [What this is](#what-this-is)
 - [What this isn't](#what-this-isnt)
+- [What it looks like](#what-it-looks-like)
 - [Quickstart — self-host as a Tor onion](#quickstart--self-host-as-a-tor-onion)
 - [Documentation](#documentation)
 - [Architecture at a glance](#architecture-at-a-glance)
@@ -70,6 +71,31 @@ makes every action it takes verifiable after the fact.
 - **Not finished.** Mobile apps, HSM support, hosted distribution,
   and several enterprise features in [SPECS.md](SPECS.md) are
   deliberately out of scope for this build.
+
+---
+
+## What it looks like
+
+Server-rendered HTML, no client framework, strict CSP — it works in Tor
+Browser with JavaScript disabled for everything except the in-browser
+bundle encryption. The screens below are a real instance driven end to
+end (with demo data); the full illustrated walkthrough is in the
+[user guide](docs/user-guide.md).
+
+<table>
+<tr>
+<td width="50%" valign="top"><img src="docs/images/register.png" alt="Registration screen with six acknowledgments"><br><sub><b>Register</b> — six plain-language acknowledgments gate account creation; the copy states exactly what the tool does, including what cannot be undone.</sub></td>
+<td width="50%" valign="top"><img src="docs/images/bundle-upload.png" alt="New bundle upload screen"><br><sub><b>Upload a bundle</b> — files are encrypted in your browser before upload. The server only ever stores ciphertext.</sub></td>
+</tr>
+<tr>
+<td width="50%" valign="top"><img src="docs/images/policy-detail.png" alt="Policy detail screen"><br><sub><b>Build a policy</b> — a check-in schedule, a grace period, and which bundles release to which destinations. Arm, suspend, and revoke live here.</sub></td>
+<td width="50%" valign="top"><img src="docs/images/dashboard-armed.png" alt="Dashboard showing a check-in countdown"><br><sub><b>Check in</b> — a live countdown to your next required check-in. One click resets the timer on every armed policy.</sub></td>
+</tr>
+<tr>
+<td width="50%" valign="top"><img src="docs/images/activity-log.png" alt="Activity log screen"><br><sub><b>Verify</b> — a hash-chained, server-signed activity log. Every action the server takes is recorded and independently checkable.</sub></td>
+<td width="50%" valign="top"><img src="docs/images/admin-overview.png" alt="Admin overview screen"><br><sub><b>Operate</b> — the admin panel shows metadata only: no user ciphertext, no passkey privates, no vault passphrases.</sub></td>
+</tr>
+</table>
 
 ---
 

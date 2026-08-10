@@ -30,15 +30,22 @@ Pages:
 | Metrics | `/ui/admin/metrics` | Per-route p50/p95/p99, event rates |
 | Config | `/ui/admin/config` | SMTP, public base URL, mailer toggle |
 
+![Admin overview — metadata only: no ciphertext, no keys, no passphrases](images/admin-overview.png)
+
 ## Vault management
 
 The release key is split 2-of-3 across:
 
 1. Operator passphrase 1 (Argon2id-derived)
 2. Operator passphrase 2 (Argon2id-derived)
-3. Offline recovery share (BIP39-style mnemonic, printed at install)
+3. Offline recovery share (a hyphen-grouped hex string, printed once at
+   install — save it on paper, never on this host)
 
-Two of three reconstruct the key. Day-to-day, the vault is unsealed
+Two of three reconstruct the key.
+
+![Admin vault — unlock state and key custody](images/admin-vault.png)
+
+Day-to-day, the vault is unsealed
 at service start when the operator provides the two passphrases via
 `/ui/admin/vault/unlock` (or the systemd EnvironmentFile, for
 unattended restart — note the trade-off: that file becomes a
@@ -64,7 +71,11 @@ Every state transition, login, and admin action writes a row to the
 - `payload_hash` (SHA-256 of this row's payload)
 - A server signature (Ed25519 over `prev_hash || payload_hash || seq`)
 
-This chain is the platform's tamper-evident substrate. Verification:
+This chain is the platform's tamper-evident substrate.
+
+![Admin ledger — filterable, hash-chained audit with a chain-verify button](images/admin-ledger.png)
+
+Verification:
 
 - **In-app:** `/ui/admin/ledger` → **Verify chain integrity**. Should
   print `chain=ok` with the current tip.
