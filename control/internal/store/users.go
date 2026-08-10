@@ -52,6 +52,22 @@ func CreateUser(ctx context.Context, q Querier, email, displayName string, ident
 	return u, nil
 }
 
+// CreateUserWithID inserts a new user with a caller-chosen ID. WebAuthn
+// registration needs this: the ID doubles as the passkey user handle fixed
+// at BeginRegister, before any row exists.
+func CreateUserWithID(ctx context.Context, q Querier, id uuid.UUID, email, displayName string, identityPubKey []byte) (*User, error) {
+	u, err := scanUser(q.QueryRow(ctx,
+		`INSERT INTO users (id, email, display_name, identity_pubkey)
+		 VALUES ($1, $2, $3, $4)
+		 RETURNING `+userCols,
+		id, email, displayName, identityPubKey,
+	))
+	if err != nil {
+		return nil, fmt.Errorf("insert user: %w", err)
+	}
+	return u, nil
+}
+
 func GetUserByEmail(ctx context.Context, q Querier, email string) (*User, error) {
 	return scanUser(q.QueryRow(ctx,
 		`SELECT `+userCols+` FROM users WHERE email = $1`, email))

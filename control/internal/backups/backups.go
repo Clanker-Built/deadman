@@ -188,6 +188,15 @@ func (m *Manager) gc(ctx context.Context) error {
 		return nil
 	}
 	for _, b := range rows[:excess] {
+		if b.Bucket != m.Destination.Bucket() {
+			// Row was written to a different destination than the one
+			// currently configured (bucket migration). Deleting through the
+			// current client would target the wrong endpoint/bucket — leave
+			// it for manual cleanup per the runbook.
+			m.Logger.Warn("backup GC skipping row recorded on a different bucket",
+				"id", b.ID, "row_bucket", b.Bucket, "current_bucket", m.Destination.Bucket())
+			continue
+		}
 		if _, err := m.Destination.RawS3().DeleteObject(ctx, &awss3.DeleteObjectInput{
 			Bucket: aws.String(b.Bucket), Key: aws.String(b.Key),
 		}); err != nil {

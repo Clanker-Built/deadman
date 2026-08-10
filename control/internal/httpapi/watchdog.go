@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -15,7 +16,9 @@ import (
 type Watchdog struct {
 	servicePub  ed25519.PublicKey
 	servicePriv ed25519.PrivateKey
-	lastTick    time.Time
+	// lastTickNanos is the last tick as Unix nanoseconds (0 = never).
+	// Atomic: written by the scheduler goroutine, read by HTTP handlers.
+	lastTickNanos atomic.Int64
 }
 
 // NewWatchdog returns a watchdog that signs heartbeats with the given key.
@@ -24,10 +27,16 @@ func NewWatchdog(pub ed25519.PublicKey, priv ed25519.PrivateKey) *Watchdog {
 }
 
 // Tick is called by the scheduler on each loop iteration.
-func (w *Watchdog) Tick() { w.lastTick = time.Now().UTC() }
+func (w *Watchdog) Tick() { w.lastTickNanos.Store(time.Now().UnixNano()) }
 
 // LastTick returns the most recent tick time (zero if never ticked).
-func (w *Watchdog) LastTick() time.Time { return w.lastTick }
+func (w *Watchdog) LastTick() time.Time {
+	n := w.lastTickNanos.Load()
+	if n == 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, n).UTC()
+}
 
 // mountWatchdogRoute exposes an unauthenticated signed heartbeat.
 //
@@ -43,8 +52,8 @@ func mountWatchdogRoute(r chi.Router, w *Watchdog) {
 	r.Get("/watchdog", func(rw http.ResponseWriter, _ *http.Request) {
 		now := time.Now().UTC()
 		var lastMs int64
-		if !w.lastTick.IsZero() {
-			lastMs = w.lastTick.UnixMilli()
+		if last := w.LastTick(); !last.IsZero() {
+			lastMs = last.UnixMilli()
 		}
 		// Canonical payload: "deadman-watchdog|<now_ms>|<last_ms>"
 		payload := []byte("deadman-watchdog|" +

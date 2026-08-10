@@ -57,7 +57,7 @@ func Load() (*Config, error) {
 	c := &Config{
 		ListenAddr:            getenv("DEADMAN_LISTEN_ADDR", ":8080"),
 		DatabaseURL:           os.Getenv("DEADMAN_DATABASE_URL"),
-		Env:                   getenv("DEADMAN_ENV", "dev"),
+		Env:                   getenv("DEADMAN_ENV", "production"),
 		ServiceSigningKeyPath: getenv("DEADMAN_SERVICE_SIGNING_KEY_PATH", "./service-signing-key.bin"),
 		RPDisplayName:         getenv("DEADMAN_RP_DISPLAY_NAME", "Deadman"),
 		RPID:                  getenv("DEADMAN_RP_ID", "localhost"),
