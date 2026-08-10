@@ -26,7 +26,8 @@ The script will:
    the elevation banner appears so you don't mistake it for the
    admin-email prompt).
 2. Install missing system packages: Docker, Go 1.25, Tor, ufw,
-   pg_dump, `qrencode`, etc.
+   `postgresql-client` (for `pg_dump` backups), and a few small
+   utilities (`curl`, `jq`, `lsof`, …).
 3. Configure ufw: allow SSH only.
 4. Prompt for:
    - Admin email (this becomes the bootstrap admin on first login).
@@ -47,15 +48,23 @@ The script will:
 2. Click **Create account**. Use the same email you gave the script.
 3. Choose a passphrase of 12+ characters. Accept the six
    acknowledgments.
+
+   ![Registration screen](images/register.png)
+
 4. The TOTP setup page appears:
+
+   ![Two-factor setup — manual key and recovery codes](images/totp-setup.png)
    - Open your authenticator app (Aegis, KeePassXC, 1Password,
      Bitwarden, etc.). Choose "manual entry."
    - Enter the **setup key** shown on the page; pick TOTP / SHA-1 /
      6 digits / 30 seconds.
    - Save the **10 recovery codes** offline. They're shown once.
    - Enter the current 6-digit code from the app to confirm.
-5. You should land on the dashboard. Top nav has an **Admin** link
-   (this confirms bootstrap promotion fired).
+5. Registration matches the bootstrap email, so you're promoted to admin
+   immediately — the top nav shows an **Admin** link the moment you finish
+   TOTP setup. You land on a short guided-setup page:
+
+   ![Welcome — the four-step guided setup shown to a new account](images/welcome.png)
 
 ## Smoke test
 
