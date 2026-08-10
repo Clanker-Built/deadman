@@ -73,10 +73,18 @@ func VerifyPassword(passphrase, encoded string) error {
 	if _, err := fmt.Sscanf(parts[2], "m=%d,t=%d,p=%d", &mem, &t, &p); err != nil {
 		return fmt.Errorf("auth: bad params: %w", err)
 	}
-	// argon2.IDKey takes threads as uint8; a corrupt row with p=0 or p>255
-	// would panic inside x/crypto/argon2 (threads=0) or silently truncate.
+	// Bound all params before argon2.IDKey: a corrupt row could otherwise
+	// panic inside x/crypto/argon2 (p=0 or t=0) or OOM-kill the process
+	// (mem near uint32 max allocates mem KiB of blocks). 1<<20 KiB = 1 GiB,
+	// 16x our own HashPassword setting, leaving headroom for future bumps.
 	if p < 1 || p > 255 {
 		return fmt.Errorf("auth: bad parallelism %d", p)
+	}
+	if t < 1 {
+		return fmt.Errorf("auth: bad iterations %d", t)
+	}
+	if mem < 8 || mem > 1<<20 {
+		return fmt.Errorf("auth: bad memory %d", mem)
 	}
 	salt, err := base64.RawStdEncoding.DecodeString(parts[3])
 	if err != nil {
