@@ -17,6 +17,7 @@ package ratelimit
 import (
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -114,8 +115,17 @@ func Middleware(l *Limiter, key KeyFunc) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			k := key(r)
 			if k != "" && !l.Allow(k) {
-				w.Header().Set("Content-Type", "application/json")
 				w.Header().Set("Retry-After", "60")
+				// Browser (/ui/) requests get a readable HTML page; API
+				// clients get JSON. Raw JSON on the login screen reads as a
+				// scary error to a stressed non-technical user.
+				if strings.HasPrefix(r.URL.Path, "/ui/") {
+					w.Header().Set("Content-Type", "text/html; charset=utf-8")
+					w.WriteHeader(http.StatusTooManyRequests)
+					_, _ = w.Write([]byte(rateLimitedHTML))
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusTooManyRequests)
 				_, _ = w.Write([]byte(`{"error":"rate limited"}`))
 				return
@@ -161,3 +171,17 @@ func (l *Limiter) evictOneLocked() {
 		delete(l.buckets, oldestKey)
 	}
 }
+
+// rateLimitedHTML is the /ui/ 429 body. It links the same-origin stylesheet
+// (allowed by CSP 'self') and contains no inline styles or scripts.
+const rateLimitedHTML = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Too many attempts — Deadman</title>
+<link rel="stylesheet" href="/ui/static/style.css"></head>
+<body><header><nav><strong>Deadman</strong></nav></header>
+<main><section><h1>Too many attempts</h1>
+<p class="muted">You have made too many requests in a short window. This is a
+safety limit that protects accounts from automated guessing.</p>
+<p>Please wait about a minute, then <a href="/ui/login">try again</a>.</p>
+</section></main></body></html>`

@@ -6,6 +6,7 @@
 package webui
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"encoding/base64"
@@ -343,8 +344,18 @@ func (r *Renderer) render(w http.ResponseWriter, req *http.Request, page string,
 		http.Error(w, "unknown page", http.StatusInternalServerError)
 		return
 	}
+	// Execute into a buffer first: a template error must not stream a
+	// half-rendered page under a 200 status. Buffering lets us surface the
+	// error as a 500 and log it, instead of silently truncating the output
+	// (e.g. a field the template can't evaluate mid-render).
+	var buf bytes.Buffer
+	if err := t.ExecuteTemplate(&buf, "layout", data); err != nil {
+		slog.Error("template render failed", "page", page, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = t.ExecuteTemplate(w, "layout", data)
+	_, _ = w.Write(buf.Bytes())
 }
 
 type userCtxKeyT struct{}

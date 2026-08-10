@@ -85,7 +85,7 @@
 
     {{if ne .Policy.State "revoked"}}
       <form method="POST" action="/ui/policies/{{.Policy.ID}}/revoke" class="inline"
-            onsubmit="return confirm('Revoke this policy permanently? This cannot be undone.');">
+            data-confirm="Revoke this policy permanently? This cannot be undone.">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <button type="submit" class="btn danger">Revoke (irreversible)</button>
       </form>
@@ -99,7 +99,7 @@
     march the policy through warning → grace → triggered, then the release
     worker fires. For testing only; never enabled in production builds.</p>
     <form method="POST" action="/ui/policies/{{.Policy.ID}}/force-trigger" class="inline"
-          onsubmit="return confirm('Force this policy to trigger NOW? This will execute the real release pipeline against configured destinations.');">
+          data-confirm="Force this policy to trigger NOW? This will execute the real release pipeline against configured destinations.">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
       <button type="submit" class="btn danger">Force trigger now</button>
     </form>
