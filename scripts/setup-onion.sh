@@ -267,7 +267,7 @@ install_go_if_missing() {
     fi
     info "Found Go ${cur} but 1.${need_minor}+ required; downloading newer."
   else
-    info "Go not found; downloading 1.25.9 from go.dev."
+    info "Go not found; downloading 1.25.12 from go.dev."
   fi
 
   local arch
@@ -278,7 +278,7 @@ install_go_if_missing() {
     *) fail "Unsupported architecture for automatic Go install: $(uname -m). Install Go 1.25+ manually (https://go.dev/dl/) and re-run." ;;
   esac
 
-  local goversion=1.25.9
+  local goversion=1.25.12
   local tar=/tmp/go-${goversion}.tar.gz
   curl -fsSL "https://go.dev/dl/go${goversion}.linux-${arch}.tar.gz" -o "$tar"
   rm -rf /usr/local/go
