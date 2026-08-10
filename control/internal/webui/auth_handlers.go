@@ -340,8 +340,13 @@ func (h *authHandlers) postLogin(w http.ResponseWriter, req *http.Request) {
 				h.renderLoginErr(w, req, "Invalid recovery code.")
 				return
 			}
+			// The code is only truly consumed once the shortened list is
+			// persisted. If that write fails we must NOT issue a session —
+			// otherwise the code stays valid and single-use is broken.
 			if err := store.SetRecoveryCodes(req.Context(), h.store.Pool, u.ID, remaining); err != nil {
 				h.logger.Error("consume recovery", "err", err)
+				h.renderLoginErr(w, req, "Internal error.")
+				return
 			}
 		default:
 			h.renderLoginErr(w, req, "2FA code or recovery code required.")
