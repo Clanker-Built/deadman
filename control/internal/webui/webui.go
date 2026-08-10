@@ -1073,7 +1073,7 @@ func fillSetup(pd *PageData, bundles []store.ContentBundle, dests []store.Destin
 		{Num: 3, Title: "Create a policy", CTA: "/ui/policies/new", CTAText: "Create policy",
 			Blurb: "Check-in schedule, grace period, which bundle releases to which destination."},
 		{Num: 4, Title: "Arm the policy", CTA: "/ui/dashboard", CTAText: "Arm from the policy page",
-			Blurb: "Starts a 24-hour activation cooldown; you can cancel during that window. Then the timer runs."},
+			Blurb: "Starts the check-in countdown immediately; you can suspend or revoke at any time before it triggers."},
 	}
 
 	hasBundle := len(bundles) > 0

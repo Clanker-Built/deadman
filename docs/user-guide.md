@@ -19,7 +19,7 @@ instance. If you're installing it, see
   and grace period. A policy is the unit that "fires."
 - **Check-in.** A signed action proving you're alive. Resets the
   policy's countdown.
-- **States.** A policy progresses: `draft` → `armed` → `healthy` →
+- **States.** A policy progresses: `draft` → (arm) → `healthy` →
   (`warning` → `grace` → `triggered` → `releasing` → `released`) when
   you stop checking in.
 
@@ -108,8 +108,12 @@ action with confirmation:
 1. From the policy page, click **Arm**.
 2. Confirm again — you'll see the destination preview, sample
    announcement, and an irreversibility warning.
-3. After arming, the policy enters a 24-hour activation cooldown
-   (you can cancel during this window). Then the timer starts.
+3. After arming, the policy is `healthy` and the countdown to your first
+   check-in **starts immediately** (due in one interval). You can suspend
+   or revoke at any time before it triggers — there is no separate
+   activation window. Your real safety margin is at the other end: if you
+   miss a check-in, a warning period (24h) plus the grace period run before
+   anything releases.
 
 ![Policy detail — attachments and the arm / suspend / revoke controls](images/policy-detail.png)
 
