@@ -25,6 +25,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -45,15 +46,32 @@ type pendingTOTP struct {
 	Created     time.Time
 }
 
+// pendingStore is written from concurrent HTTP handlers; every access must
+// hold mu or the runtime aborts on concurrent map writes.
 type pendingStore struct {
-	m map[uuid.UUID]*pendingTOTP
+	mu sync.Mutex
+	m  map[uuid.UUID]*pendingTOTP
 }
 
 func newPendingStore() *pendingStore { return &pendingStore{m: make(map[uuid.UUID]*pendingTOTP)} }
 
-func (p *pendingStore) put(s *pendingTOTP)            { p.m[s.UserID] = s }
-func (p *pendingStore) get(id uuid.UUID) *pendingTOTP { return p.m[id] }
-func (p *pendingStore) drop(id uuid.UUID)             { delete(p.m, id) }
+func (p *pendingStore) put(s *pendingTOTP) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.m[s.UserID] = s
+}
+
+func (p *pendingStore) get(id uuid.UUID) *pendingTOTP {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.m[id]
+}
+
+func (p *pendingStore) drop(id uuid.UUID) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	delete(p.m, id)
+}
 
 // authHandlers is the bundle of state that the auth POST handlers need.
 type authHandlers struct {

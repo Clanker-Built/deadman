@@ -44,7 +44,7 @@ func (s *Service) IssueSession(ctx context.Context, userID uuid.UUID, deviceID *
 
 // SetSessionCookie writes the cookie with hardened flags.
 func SetSessionCookie(w http.ResponseWriter, token string, secure bool) {
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- HttpOnly+SameSite=Lax always set; Secure is caller-controlled (req.TLS != nil), deliberately off only on the plain-HTTP .onion deployment where Secure would break sessions entirely
 		Name:     SessionCookieName,
 		Value:    token,
 		Path:     "/",

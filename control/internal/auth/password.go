@@ -73,6 +73,11 @@ func VerifyPassword(passphrase, encoded string) error {
 	if _, err := fmt.Sscanf(parts[2], "m=%d,t=%d,p=%d", &mem, &t, &p); err != nil {
 		return fmt.Errorf("auth: bad params: %w", err)
 	}
+	// argon2.IDKey takes threads as uint8; a corrupt row with p=0 or p>255
+	// would panic inside x/crypto/argon2 (threads=0) or silently truncate.
+	if p < 1 || p > 255 {
+		return fmt.Errorf("auth: bad parallelism %d", p)
+	}
 	salt, err := base64.RawStdEncoding.DecodeString(parts[3])
 	if err != nil {
 		return fmt.Errorf("auth: bad salt: %w", err)
@@ -81,7 +86,10 @@ func VerifyPassword(passphrase, encoded string) error {
 	if err != nil {
 		return fmt.Errorf("auth: bad hash: %w", err)
 	}
-	got := argon2.IDKey([]byte(passphrase), salt, t, mem, uint8(p), uint32(len(want)))
+	if len(want) < 16 || len(want) > 1024 {
+		return errors.New("auth: bad hash length")
+	}
+	got := argon2.IDKey([]byte(passphrase), salt, t, mem, uint8(p), uint32(len(want))) // #nosec G115 -- p and len(want) are range-checked above; both conversions provably in range
 	if subtle.ConstantTimeCompare(got, want) != 1 {
 		return errors.New("auth: passphrase mismatch")
 	}

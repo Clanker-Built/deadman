@@ -246,7 +246,7 @@ func (w *Worker) unseal(ctx context.Context, b *store.ContentBundle) ([]byte, er
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = body.Close() }()
+	defer body.Close()
 	ct, err := io.ReadAll(body)
 	if err != nil {
 		return nil, err
@@ -415,7 +415,7 @@ func (w *Worker) deliver(ctx context.Context, d *store.Destination, publicURL st
 		if err != nil {
 			return err
 		}
-		defer func() { _ = resp.Body.Close() }()
+		defer resp.Body.Close()
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			return fmt.Errorf("webhook status %d", resp.StatusCode)
 		}

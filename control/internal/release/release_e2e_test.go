@@ -300,15 +300,20 @@ func findReleaseID(ctx context.Context, t *testing.T, s *store.Store, policyID u
 }
 
 // insertBundleWithID is a test-local copy so we can specify the ID explicitly
-// (keeping the object-storage key and DB row in sync).
+// (keeping the object-storage key and DB row in sync). The RETURNING scan is
+// deliberate: it round-trips the full row through store.ContentBundle so a
+// schema change the struct can't scan fails here, not in production reads.
 func insertBundleWithID(ctx context.Context, q store.Querier, b *store.ContentBundle) error {
-	_, err := q.Exec(ctx,
+	var out store.ContentBundle
+	return q.QueryRow(ctx,
 		`INSERT INTO content_bundles
 		   (id, user_id, version, label, manifest_hash, manifest, wrapped_bundle_key, wrap_scheme,
 		    primary_uri, backup_uri, size_bytes, ciphertext_sha256)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+		 RETURNING id, user_id, version, label, manifest_hash, manifest, wrapped_bundle_key, wrap_scheme,
+		           primary_uri, backup_uri, size_bytes, ciphertext_sha256, created_at, deleted_at`,
 		b.ID, b.UserID, b.Version, b.Label, b.ManifestHash, b.Manifest, b.WrappedBundleKey, b.WrapScheme,
 		b.PrimaryURI, b.BackupURI, b.SizeBytes, b.CiphertextSHA256,
-	)
-	return err
+	).Scan(&out.ID, &out.UserID, &out.Version, &out.Label, &out.ManifestHash, &out.Manifest, &out.WrappedBundleKey, &out.WrapScheme,
+		&out.PrimaryURI, &out.BackupURI, &out.SizeBytes, &out.CiphertextSHA256, &out.CreatedAt, &out.DeletedAt)
 }

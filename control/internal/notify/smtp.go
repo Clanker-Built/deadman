@@ -69,7 +69,7 @@ func (s *Sender) Send(to []string, subject, textBody string) error {
 	if err != nil {
 		return fmt.Errorf("smtp: client: %w", err)
 	}
-	defer func() { _ = c.Close() }()
+	defer c.Close()
 
 	if err := c.Hello(localhostName()); err != nil {
 		return fmt.Errorf("smtp: hello: %w", err)

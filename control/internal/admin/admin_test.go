@@ -146,7 +146,7 @@ func TestRequireAdmin_NoSession_RedirectsToLogin(t *testing.T) {
 func TestRequireAdmin_NonAdmin_404s(t *testing.T) {
 	s := requireDB(t)
 	d := newTestDeps(t, s)
-	_, cookie := makeUserWithSession(t, s /*isAdmin=*/, false, 0)
+	_, cookie := makeUserWithSession(t, s, false, 0)
 	rec := runMW(t, d, cookie, "/ui/admin/")
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("want 404 (do not leak admin surface), got %d", rec.Code)

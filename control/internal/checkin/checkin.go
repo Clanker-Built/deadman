@@ -119,7 +119,7 @@ func Payload(nonce [NonceSize]byte, counter int64) [32]byte {
 	h.Write([]byte(DomainPrefix))
 	h.Write(nonce[:])
 	var cbuf [8]byte
-	binary.BigEndian.PutUint64(cbuf[:], uint64(counter))
+	binary.BigEndian.PutUint64(cbuf[:], uint64(counter)) // #nosec G115 -- same-width int64->uint64 reinterpretation, bijective hash-input serialization; Verify rejects counter <= lastCounter (monotonic, starts at 0) before hashing
 	h.Write(cbuf[:])
 	var out [32]byte
 	copy(out[:], h.Sum(nil))

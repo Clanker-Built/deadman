@@ -57,7 +57,7 @@ func WrapServerSecret(pub *rsa.PublicKey, plaintext []byte) ([]byte, error) {
 	out := make([]byte, 0, 1+2+len(wrappedKey)+len(nonce)+len(ct))
 	out = append(out, 0x01) // version
 	var lb [2]byte
-	binary.BigEndian.PutUint16(lb[:], uint16(len(wrappedKey)))
+	binary.BigEndian.PutUint16(lb[:], uint16(len(wrappedKey))) // #nosec G115 -- len(wrappedKey) > 0xFFFF is rejected above; len() is non-negative, so provably in [0, 0xFFFF]
 	out = append(out, lb[:]...)
 	out = append(out, wrappedKey...)
 	out = append(out, nonce...)

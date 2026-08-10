@@ -435,6 +435,10 @@ func MountWithConfig(r chi.Router, logger *slog.Logger, s *store.Store, authSvc 
 	r.Get("/ui/register", func(w http.ResponseWriter, req *http.Request) {
 		rend.render(w, req, "register", PageData{Title: "Create account"})
 	})
+	// Route-mounting invariant: register and login must stay OUTSIDE the
+	// session-protected group below so they are reachable without a session.
+	// TOTP setup (/ui/auth/totp/setup) must stay INSIDE it — it shows secrets
+	// and requires an authenticated (just-registered or logged-in) user.
 	r.Post("/ui/register", authH.postRegister)
 	r.Post("/ui/login", authH.postLogin)
 	r.Get("/ui/help", func(w http.ResponseWriter, req *http.Request) {
@@ -458,7 +462,7 @@ func MountWithConfig(r chi.Router, logger *slog.Logger, s *store.Store, authSvc 
 		if _, sess, err := authSvc.Authenticate(req.Context(), req); err == nil && sess != nil {
 			_ = store.RevokeSession(req.Context(), s.Pool, sess.ID)
 		}
-		http.SetCookie(w, &http.Cookie{
+		http.SetCookie(w, &http.Cookie{ // #nosec G124 -- cookie deletion (empty Value, MaxAge -1) with HttpOnly+SameSite=Lax; Secure would break logout on the plain-HTTP .onion deployment, and there is no value to protect
 			Name: auth.SessionCookieName, Value: "", Path: "/", MaxAge: -1,
 			HttpOnly: true, SameSite: http.SameSiteLaxMode,
 		})
@@ -551,7 +555,7 @@ func MountWithConfig(r chi.Router, logger *slog.Logger, s *store.Store, authSvc 
 				return
 			}
 			// Clear the cookie and bounce to home.
-			http.SetCookie(w, &http.Cookie{
+			http.SetCookie(w, &http.Cookie{ // #nosec G124 -- cookie deletion (empty Value, MaxAge -1) with HttpOnly+SameSite=Lax; Secure would break the session clear on the plain-HTTP .onion deployment, and there is no value to protect
 				Name: auth.SessionCookieName, Value: "", Path: "/", MaxAge: -1,
 				HttpOnly: true, SameSite: http.SameSiteLaxMode,
 			})
@@ -925,7 +929,7 @@ func MountWithConfig(r chi.Router, logger *slog.Logger, s *store.Store, authSvc 
 				parseIDs("bundle_ids"), parseIDs("destination_ids")); err != nil {
 				logger.Warn("update attachments", "err", err)
 			}
-			http.Redirect(w, req, "/ui/policies/"+id.String(), http.StatusSeeOther)
+			http.Redirect(w, req, "/ui/policies/"+id.String(), http.StatusSeeOther) // #nosec G710 -- constant local path plus uuid.Parse-validated ID from the URL path; same-origin only
 		})
 
 		if cfg.DevMode {
@@ -939,7 +943,7 @@ func MountWithConfig(r chi.Router, logger *slog.Logger, s *store.Store, authSvc 
 				if err := polSvc.ForceTriggerDev(req.Context(), u.ID, id); err != nil {
 					logger.Warn("force trigger", "err", err)
 				}
-				http.Redirect(w, req, "/ui/policies/"+id.String(), http.StatusSeeOther)
+				http.Redirect(w, req, "/ui/policies/"+id.String(), http.StatusSeeOther) // #nosec G710 -- constant local path plus uuid.Parse-validated ID from the URL path; same-origin only
 			})
 		}
 
@@ -964,7 +968,7 @@ func MountWithConfig(r chi.Router, logger *slog.Logger, s *store.Store, authSvc 
 			if err := fn(); err != nil {
 				logger.Warn("policy action", "err", err)
 			}
-			http.Redirect(w, req, "/ui/policies/"+id.String(), http.StatusSeeOther)
+			http.Redirect(w, req, "/ui/policies/"+id.String(), http.StatusSeeOther) // #nosec G710 -- constant local path plus uuid.Parse-validated ID from the URL path; same-origin only
 		})
 	})
 

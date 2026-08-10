@@ -28,6 +28,12 @@ import (
 //     run pre-session.
 //
 // Mismatch => 403, no body, no leak of which side was wrong.
+//
+// This middleware also caps the request body for every /ui/ mutating request
+// (maxUIFormBytes) before anything parses it. All /ui/ POSTs are small HTML
+// forms; without the cap, the pre-session register/login endpoints would
+// accept unbounded bodies into ParseForm — a memory-exhaustion vector.
+// /api/v1/* is untouched (bundle upload has its own MaxBytesReader).
 func csrfMiddleware(authSvc *auth.Service) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -35,6 +41,7 @@ func csrfMiddleware(authSvc *auth.Service) func(http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
+			r.Body = http.MaxBytesReader(w, r.Body, maxUIFormBytes)
 			_, sess, err := authSvc.Authenticate(r.Context(), r)
 			if err != nil || sess == nil {
 				next.ServeHTTP(w, r)
@@ -55,6 +62,10 @@ func csrfMiddleware(authSvc *auth.Service) func(http.Handler) http.Handler {
 		})
 	}
 }
+
+// maxUIFormBytes bounds /ui/ form POST bodies. 1 MiB is orders of magnitude
+// above any legitimate form here (text fields only, no uploads).
+const maxUIFormBytes = 1 << 20
 
 func needsCSRFCheck(r *http.Request) bool {
 	switch r.Method {

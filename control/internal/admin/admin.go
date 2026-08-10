@@ -81,7 +81,7 @@ func (d *Deps) RequireAdmin(next http.Handler) http.Handler {
 			if r.URL.RawQuery != "" {
 				next += "?" + r.URL.RawQuery
 			}
-			http.Redirect(w, r, "/ui/admin/reauth?next="+next, http.StatusSeeOther)
+			http.Redirect(w, r, "/ui/admin/reauth?next="+next, http.StatusSeeOther) // #nosec G710 -- Location always starts with the constant local path "/ui/admin/reauth"; the request-derived part is confined to its query string, and reauth/finish re-validates the "/ui/admin" prefix
 			return
 		}
 		ctx := context.WithValue(r.Context(), ctxKeyAdminUser, u)

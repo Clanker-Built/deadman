@@ -48,14 +48,22 @@ jobs:
           version: v2.11.4
           working-directory: control
 
+  # Standalone pinned gosec run. Rule coverage differs between this CLI and
+  # the gosec bundled in golangci-lint (each fires rules the other doesn't),
+  # so both run. Suppressions live as per-site `#nosec Gxxx -- reason`
+  # annotations in the code, honored identically by both runners.
   gosec:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: control
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: control/go.mod
+          cache-dependency-path: control/go.sum
       - name: gosec
         run: |
-          go install github.com/securego/gosec/v2/cmd/gosec@latest
-          gosec ./control/...
+          go install github.com/securego/gosec/v2/cmd/gosec@v2.28.0
+          gosec ./...

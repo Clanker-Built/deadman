@@ -50,7 +50,7 @@ func LoadOrCreateReleaseKey(path string) (*rsa.PrivateKey, error) {
 		if info.Mode().Perm()&0o077 != 0 {
 			return nil, fmt.Errorf("release key %s has too-open permissions %v; want 0600", path, info.Mode().Perm())
 		}
-		b, err := os.ReadFile(path)
+		b, err := os.ReadFile(path) // #nosec G304 -- path comes solely from operator config (DEADMAN_RELEASE_KEY_PATH via config.Load); 0600 perms enforced above
 		if err != nil {
 			return nil, fmt.Errorf("release key read: %w", err)
 		}
@@ -146,8 +146,8 @@ func bigIntBytes(e int) []byte {
 	b := [8]byte{}
 	n := 0
 	for i := 7; i >= 0; i-- {
-		if byte(e>>(8*i)) != 0 || n > 0 {
-			b[n] = byte(e >> (8 * i))
+		if byte(e>>(8*i)) != 0 || n > 0 { // #nosec G115 -- intentional big-endian byte extraction; loop covers all 8 bytes (i=7..0), e is the server release key's RSA exponent, never request input
+			b[n] = byte(e >> (8 * i)) // #nosec G115 -- see above; per-byte truncation is the point of the extraction
 			n++
 		}
 	}
