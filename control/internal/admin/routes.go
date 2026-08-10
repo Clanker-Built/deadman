@@ -77,7 +77,7 @@ func (d *Deps) Mount(r chi.Router, mc MountConfig) {
 	// but whose step-up is stale. Renders a page that performs a fresh
 	// passkey assertion and on success calls POST /ui/admin/reauth/finish.
 	r.Get("/ui/admin/reauth", func(w http.ResponseWriter, req *http.Request) {
-		uid, _, err := d.Auth.Authenticate(req.Context(), req)
+		uid, sess, err := d.Auth.Authenticate(req.Context(), req)
 		if err != nil {
 			http.Redirect(w, req, "/ui/login", http.StatusSeeOther)
 			return
@@ -88,6 +88,9 @@ func (d *Deps) Mount(r chi.Router, mc MountConfig) {
 			return
 		}
 		ctx := webui.WithUser(req.Context(), u)
+		// Attach the session so the renderer emits the CSRF token — without
+		// it the reauth form posts an empty csrf_token and always 403s.
+		ctx = webui.WithSession(ctx, sess)
 		next := req.URL.Query().Get("next")
 		if next == "" || !strings.HasPrefix(next, "/ui/admin") {
 			next = "/ui/admin/"
@@ -824,7 +827,7 @@ func (d *Deps) handleConfigTestSMTP(mc MountConfig) http.HandlerFunc {
 		if to == "" {
 			to = admin.Email
 		}
-		err := sender.Send([]string{to},
+		err := sender.Send(req.Context(), []string{to},
 			"Deadman · SMTP test",
 			"This is a test message from the Deadman admin panel.\n"+
 				"If you received this, SMTP is correctly configured.\n")

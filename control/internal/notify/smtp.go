@@ -4,6 +4,7 @@
 package notify
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -39,7 +40,9 @@ func NewSender(cfg SMTPConfig) *Sender { return &Sender{cfg: cfg} }
 
 // Send delivers a single message. Returns nil on success. One connection per
 // call; fine for M3 release-worker scale (handful of mails per trigger).
-func (s *Sender) Send(to []string, subject, textBody string) error {
+// The whole SMTP session runs under ctx and an absolute I/O deadline, so a
+// hung or silent server cannot block the caller indefinitely.
+func (s *Sender) Send(ctx context.Context, to []string, subject, textBody string) error {
 	if !s.cfg.Enabled() {
 		return errors.New("smtp: not configured")
 	}
@@ -61,12 +64,28 @@ func (s *Sender) Send(to []string, subject, textBody string) error {
 	// Dial, EHLO, STARTTLS, AUTH, MAIL, RCPT, DATA.
 	// net/smtp doesn't pick STARTTLS automatically when starting from 587;
 	// we drive it explicitly so we can verify TLS config.
-	conn, err := net.DialTimeout("tcp", addr, 15*time.Second)
+	dialer := net.Dialer{Timeout: 15 * time.Second}
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return fmt.Errorf("smtp: dial: %w", err)
 	}
+	// Absolute deadline for the whole session (greeting through QUIT) so a
+	// hung server cannot block forever; honor an earlier ctx deadline.
+	deadline := time.Now().Add(2 * time.Minute)
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
+	}
+	if err := conn.SetDeadline(deadline); err != nil {
+		_ = conn.Close()
+		return fmt.Errorf("smtp: set deadline: %w", err)
+	}
+	// If ctx is canceled mid-session, close the conn to unblock any pending
+	// read or write.
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stop()
 	c, err := smtp.NewClient(conn, s.cfg.Host)
 	if err != nil {
+		_ = conn.Close()
 		return fmt.Errorf("smtp: client: %w", err)
 	}
 	defer c.Close()

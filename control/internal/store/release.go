@@ -109,6 +109,30 @@ func FinishRelease(ctx context.Context, q Querier, id uuid.UUID, newState string
 	return err
 }
 
+// DestinationDelivered reports whether a destination already has a successful
+// delivery for this release, so a resumed or retried run skips it instead of
+// delivering twice (idempotency across crashes and concurrent workers).
+func DestinationDelivered(ctx context.Context, q Querier, releaseID, destID uuid.UUID) (bool, error) {
+	var ok bool
+	err := q.QueryRow(ctx,
+		`SELECT EXISTS (
+		   SELECT 1 FROM release_destination_attempts
+		   WHERE release_transaction_id = $1 AND destination_id = $2 AND state = 'ok'
+		 )`, releaseID, destID).Scan(&ok)
+	return ok, err
+}
+
+// CountDestinationAttempts returns how many attempts a destination has already
+// had for this release, so the next attempt is numbered correctly and a
+// bounded retry cap can be enforced.
+func CountDestinationAttempts(ctx context.Context, q Querier, releaseID, destID uuid.UUID) (int, error) {
+	var n int
+	err := q.QueryRow(ctx,
+		`SELECT count(*) FROM release_destination_attempts
+		 WHERE release_transaction_id = $1 AND destination_id = $2`, releaseID, destID).Scan(&n)
+	return n, err
+}
+
 // RecordDestinationAttempt inserts a per-destination attempt row.
 func RecordDestinationAttempt(ctx context.Context, q Querier, releaseID, destID uuid.UUID, attempt int, state string, lastErr string) error {
 	var errPtr *string
@@ -130,15 +154,18 @@ func ListTriggeredPoliciesNeedingRelease(ctx context.Context, q Querier, limit i
 	Epoch           int64
 }, error) {
 	rows, err := q.Query(ctx,
+		// No NOT-EXISTS filter on release_transactions: a policy is listed as
+		// long as it is still 'triggered'. Creating the release row and
+		// advancing the policy to 'releasing' happen in two transactions, so a
+		// failure between them can leave a row created but the policy still
+		// 'triggered'. Re-listing it (CreateOrGet is idempotent, ReleaseStarted
+		// is a no-op once 'releasing') lets the next tick finish the advance
+		// instead of wedging the policy forever.
 		`SELECT p.id, p.active_version_id, ps.epoch
 		 FROM policies p
 		 JOIN policy_states ps ON ps.policy_id = p.id
 		 WHERE p.state = 'triggered'
 		   AND p.active_version_id IS NOT NULL
-		   AND NOT EXISTS (
-		     SELECT 1 FROM release_transactions rt
-		     WHERE rt.policy_id = p.id AND rt.epoch = ps.epoch
-		   )
 		 LIMIT $1`, limit)
 	if err != nil {
 		return nil, err
