@@ -33,7 +33,7 @@ func LoadOrCreateServiceKey(path string) (ed25519.PublicKey, ed25519.PrivateKey,
 		if info.Mode().Perm()&0o077 != 0 {
 			return nil, nil, fmt.Errorf("service key %s has too-open permissions %v; want 0600", path, info.Mode().Perm())
 		}
-		seed, err := os.ReadFile(path)
+		seed, err := os.ReadFile(path) // #nosec G304 -- signing key path comes solely from operator config (DEADMAN_SERVICE_SIGNING_KEY_PATH via config.Load); 0600 perms enforced above
 		if err != nil {
 			return nil, nil, fmt.Errorf("service key read: %w", err)
 		}

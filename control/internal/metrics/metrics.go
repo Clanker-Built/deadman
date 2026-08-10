@@ -127,7 +127,7 @@ func (r *Registry) Snapshot() Snapshot {
 			Last1m:  rb.countSince(now.Add(-1 * time.Minute)),
 			Last5m:  rb.countSince(now.Add(-5 * time.Minute)),
 			Last60m: rb.countSince(now.Add(-60 * time.Minute)),
-			Total:   rb.total(),
+			Total:   rb.total,
 		}
 	}
 	routes := make([]RouteStat, 0, len(r.routes))
@@ -214,7 +214,7 @@ type ringBuf struct {
 	ts    []time.Time
 	cap   int
 	next  int
-	count int64
+	total int64
 }
 
 func newRingBuf(capacity int) *ringBuf {
@@ -222,7 +222,7 @@ func newRingBuf(capacity int) *ringBuf {
 }
 
 func (r *ringBuf) push(t time.Time) {
-	r.count++
+	r.total++
 	if len(r.ts) < r.cap {
 		r.ts = append(r.ts, t)
 		return
@@ -240,5 +240,3 @@ func (r *ringBuf) countSince(cutoff time.Time) int64 {
 	}
 	return n
 }
-
-func (r *ringBuf) total() int64 { return r.count }

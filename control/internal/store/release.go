@@ -48,12 +48,20 @@ func CreateOrGetReleaseTransaction(ctx context.Context, q Querier, policyID, ver
 }
 
 // FindPendingReleases returns release transactions that still need work.
+//
+// The join on policies.state = 'releasing' is a safety gate: a policy that was
+// revoked or suspended after triggering must never have its release advanced,
+// even if the atomic cancel in the revoke path was somehow missed. Both
+// conditions are required — the release row must be unfinished AND the policy
+// must still be in the releasing state.
 func FindPendingReleases(ctx context.Context, q Querier, limit int) ([]ReleaseTransaction, error) {
 	rows, err := q.Query(ctx,
-		`SELECT id, policy_id, policy_version_id, epoch, state, started_at, completed_at, manifest, service_signature
-		 FROM release_transactions
-		 WHERE state IN ('pending','unsealing','packaging','publishing')
-		 ORDER BY started_at ASC LIMIT $1 FOR UPDATE SKIP LOCKED`, limit)
+		`SELECT rt.id, rt.policy_id, rt.policy_version_id, rt.epoch, rt.state, rt.started_at, rt.completed_at, rt.manifest, rt.service_signature
+		 FROM release_transactions rt
+		 JOIN policies p ON p.id = rt.policy_id
+		 WHERE rt.state IN ('pending','unsealing','packaging','publishing')
+		   AND p.state = 'releasing'
+		 ORDER BY rt.started_at ASC LIMIT $1 FOR UPDATE OF rt SKIP LOCKED`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -69,19 +77,79 @@ func FindPendingReleases(ctx context.Context, q Querier, limit int) ([]ReleaseTr
 	return out, rows.Err()
 }
 
-// UpdateReleaseState advances a release transaction to a new state.
-func UpdateReleaseState(ctx context.Context, q Querier, id uuid.UUID, newState string) error {
-	_, err := q.Exec(ctx, `UPDATE release_transactions SET state = $1 WHERE id = $2`, newState, id)
-	return err
+// activeReleaseStates are the non-terminal states a release advances through.
+// Guarding writes on these lets a concurrent cancel (which sets 'canceled')
+// win by exclusion: once canceled/finalized, the worker's advances no-op.
+const activeReleaseStates = `('pending','unsealing','packaging','publishing')`
+
+// UpdateReleaseState advances a release transaction to a new state, but only
+// while it is still in an active (non-terminal) state. Returns false with no
+// error if the row was canceled or finalized underneath the caller — the
+// caller must then stop, since a cancel has won the race.
+func UpdateReleaseState(ctx context.Context, q Querier, id uuid.UUID, newState string) (bool, error) {
+	tag, err := q.Exec(ctx,
+		`UPDATE release_transactions SET state = $1
+		 WHERE id = $2 AND state IN `+activeReleaseStates, newState, id)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
 }
 
-// FinishRelease sets the manifest + signature and marks completed.
-func FinishRelease(ctx context.Context, q Querier, id uuid.UUID, newState string, manifest json.RawMessage, sig []byte) error {
-	_, err := q.Exec(ctx,
+// CancelOpenReleasesForPolicy marks every not-yet-finished release transaction
+// for a policy as 'canceled'. Called in the same transaction as a revoke or
+// suspend so the cancellation is atomic with the policy state change: a
+// release that has not yet published is stopped before it can. Returns the
+// number of rows canceled. Rows already in a terminal state are untouched.
+func CancelOpenReleasesForPolicy(ctx context.Context, q Querier, policyID uuid.UUID) (int64, error) {
+	tag, err := q.Exec(ctx,
+		`UPDATE release_transactions
+		   SET state = 'canceled', completed_at = now()
+		 WHERE policy_id = $1
+		   AND state IN ('pending','unsealing','packaging','publishing')`, policyID)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
+// FinishRelease sets the manifest + signature and marks the release terminal,
+// but only from an active state. Returns false with no error if the release
+// was canceled underneath the caller, so a revoke that landed during delivery
+// is not overwritten by a 'completed' write.
+func FinishRelease(ctx context.Context, q Querier, id uuid.UUID, newState string, manifest json.RawMessage, sig []byte) (bool, error) {
+	tag, err := q.Exec(ctx,
 		`UPDATE release_transactions
 		   SET state = $1, manifest = $2, service_signature = $3, completed_at = now()
-		 WHERE id = $4`, newState, manifest, sig, id)
-	return err
+		 WHERE id = $4 AND state IN `+activeReleaseStates, newState, manifest, sig, id)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+// DestinationDelivered reports whether a destination already has a successful
+// delivery for this release, so a resumed or retried run skips it instead of
+// delivering twice (idempotency across crashes and concurrent workers).
+func DestinationDelivered(ctx context.Context, q Querier, releaseID, destID uuid.UUID) (bool, error) {
+	var ok bool
+	err := q.QueryRow(ctx,
+		`SELECT EXISTS (
+		   SELECT 1 FROM release_destination_attempts
+		   WHERE release_transaction_id = $1 AND destination_id = $2 AND state = 'ok'
+		 )`, releaseID, destID).Scan(&ok)
+	return ok, err
+}
+
+// CountDestinationAttempts returns how many attempts a destination has already
+// had for this release, so the next attempt is numbered correctly and a
+// bounded retry cap can be enforced.
+func CountDestinationAttempts(ctx context.Context, q Querier, releaseID, destID uuid.UUID) (int, error) {
+	var n int
+	err := q.QueryRow(ctx,
+		`SELECT count(*) FROM release_destination_attempts
+		 WHERE release_transaction_id = $1 AND destination_id = $2`, releaseID, destID).Scan(&n)
+	return n, err
 }
 
 // RecordDestinationAttempt inserts a per-destination attempt row.
@@ -105,15 +173,18 @@ func ListTriggeredPoliciesNeedingRelease(ctx context.Context, q Querier, limit i
 	Epoch           int64
 }, error) {
 	rows, err := q.Query(ctx,
+		// No NOT-EXISTS filter on release_transactions: a policy is listed as
+		// long as it is still 'triggered'. Creating the release row and
+		// advancing the policy to 'releasing' happen in two transactions, so a
+		// failure between them can leave a row created but the policy still
+		// 'triggered'. Re-listing it (CreateOrGet is idempotent, ReleaseStarted
+		// is a no-op once 'releasing') lets the next tick finish the advance
+		// instead of wedging the policy forever.
 		`SELECT p.id, p.active_version_id, ps.epoch
 		 FROM policies p
 		 JOIN policy_states ps ON ps.policy_id = p.id
 		 WHERE p.state = 'triggered'
 		   AND p.active_version_id IS NOT NULL
-		   AND NOT EXISTS (
-		     SELECT 1 FROM release_transactions rt
-		     WHERE rt.policy_id = p.id AND rt.epoch = ps.epoch
-		   )
 		 LIMIT $1`, limit)
 	if err != nil {
 		return nil, err

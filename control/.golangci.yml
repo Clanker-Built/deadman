@@ -5,30 +5,42 @@ run:
   tests: true
 
 linters:
+  # default: none makes this list the complete, authoritative linter policy —
+  # removing a line here really disables that linter.
+  default: none
   enable:
-    - govet
-    - staticcheck
+    - bodyclose
     - errcheck
-    - ineffassign
-    - unused
     - gosec
-    - revive
+    - govet
+    - ineffassign
     - misspell
+    - nilerr
+    - revive
+    - staticcheck
     - unconvert
     - unparam
-    - bodyclose
-    - nilerr
+    - unused
     - wastedassign
   settings:
+    errcheck:
+      # Read-side Close policy, settled once: errors from closing read streams
+      # carry nothing actionable. Write-side closes must still be checked.
+      exclude-functions:
+        - (io.ReadCloser).Close
+        - (*net/smtp.Client).Close
+    # gosec suppressions live as per-site `#nosec Gxxx -- reason` annotations,
+    # honored identically by this bundled gosec and the pinned standalone
+    # gosec CI job. The one rule-level exclude below is for a mitigation that
+    # is central rather than per-site, so a site annotation would be noise at
+    # every current and future form handler.
     gosec:
       excludes:
-        - G104  # ignored errors (too noisy pre-M1)
-        - G115  # int conversions — argon2 params, TOTP step, varint sizes are all bounded
-        - G118  # context.Background in goroutines — release/audit workers intentionally outlive request scope
-        - G120  # ParseForm without MaxBytesReader — known gap, tracked in SECURITY.md
-        - G204  # exec with operator-supplied args (pg_dump uses operator DATABASE_URL)
-        - G304  # file inclusion via variable — paths come from operator config (vault, signing key, etc.)
-        - G505  # crypto/sha1 — RFC 6238 TOTP mandates HMAC-SHA1; SHA-1 is not used as a hash here
+        # Request bodies ARE bounded, just not at the ParseForm sites the rule
+        # inspects: csrfMiddleware caps every /ui/ mutating request at
+        # maxUIFormBytes before any handler parses, and the /api bundle upload
+        # applies its own MaxBytesReader (internal/httpapi/bundle_routes.go).
+        - G120
     revive:
       rules:
         - name: var-naming

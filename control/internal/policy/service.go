@@ -65,6 +65,9 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*store.Policy, *s
 	var p *store.Policy
 	var v *store.PolicyVersion
 	err := s.Store.InTx(ctx, func(ctx context.Context, q store.Querier) error {
+		if e := verifyAttachmentOwnership(ctx, q, in.UserID, in.BundleIDs, in.DestinationIDs); e != nil {
+			return e
+		}
 		var e error
 		p, e = store.CreatePolicy(ctx, q, in.UserID, in.Title, in.Description)
 		if e != nil {
@@ -169,6 +172,9 @@ func (s *Service) UpdateAttachments(ctx context.Context, userID, policyID uuid.U
 		if p.State != "draft" && p.State != "suspended" {
 			return fmt.Errorf("policy: can only edit attachments when draft or suspended (got %s)", p.State)
 		}
+		if err := verifyAttachmentOwnership(ctx, q, userID, bundleIDs, destIDs); err != nil {
+			return err
+		}
 		prev, err := store.GetActivePolicyVersion(ctx, q, policyID)
 		if err != nil {
 			return fmt.Errorf("policy: no prior version: %w", err)
@@ -219,10 +225,13 @@ func (s *Service) UpdateAttachments(ctx context.Context, userID, policyID uuid.U
 	})
 }
 
-// ForceTriggerDev is a development-only helper that rewinds a policy's
-// deadlines into the past so the next scheduler tick transitions
-// healthy → warning → grace → triggered immediately. Use via the dev UI
-// button or curl; never exposed in production builds.
+// ForceTriggerDev is a development-only helper that moves an armed policy
+// directly into grace with an already-expired deadline, so the next
+// scheduler tick transitions grace → triggered immediately. Rewinding
+// next_due_at alone is not enough: the warning → grace transition
+// recomputes grace_expires_at a full grace period into the future,
+// overwriting any forced past value. Use via the dev UI button or curl;
+// never exposed in production builds.
 func (s *Service) ForceTriggerDev(ctx context.Context, userID, policyID uuid.UUID) error {
 	return s.Store.InTx(ctx, func(ctx context.Context, q store.Querier) error {
 		p, err := store.GetPolicy(ctx, q, policyID)
@@ -232,12 +241,41 @@ func (s *Service) ForceTriggerDev(ctx context.Context, userID, policyID uuid.UUI
 		if userID != uuid.Nil && p.UserID != userID {
 			return fmt.Errorf("policy: not owner")
 		}
+		switch p.State {
+		case "healthy", "warning", "grace", "hold":
+		default:
+			return fmt.Errorf("policy: cannot force-trigger from %s", p.State)
+		}
 		past := s.Clock.Now().Add(-time.Hour)
+		// Bump the epoch so any concurrent transition that read the old
+		// runtime loses its CAS instead of overwriting the forced state.
 		_, err = q.Exec(ctx,
 			`UPDATE policy_states
 			 SET next_due_at = $2, grace_expires_at = $2, hold_expires_at = NULL,
-			     updated_at = now()
+			     epoch = epoch + 1, updated_at = now()
 			 WHERE policy_id = $1`, policyID, past)
+		if err != nil {
+			return err
+		}
+		if _, err = q.Exec(ctx, `UPDATE policies SET state = 'grace', updated_at = now() WHERE id = $1`, policyID); err != nil {
+			return err
+		}
+		// Audit the forced transition in the same tx, like every other
+		// state-mutating path, so the ledger never shows an uncaused
+		// grace → triggered later. Distinct event type flags it as operator-forced.
+		var actorID *uuid.UUID
+		if userID != uuid.Nil {
+			uid := userID
+			actorID = &uid
+		}
+		_, err = s.Ledger.AppendTx(ctx, q, audit.Event{
+			ActorKind:   audit.ActorUser,
+			ActorID:     actorID,
+			EventType:   "policy.force_triggered_dev",
+			SubjectKind: "policy",
+			SubjectID:   &policyID,
+			Payload:     map[string]any{"from": p.State, "to": "grace", "reason": "dev_force"},
+		})
 		return err
 	})
 }
@@ -266,7 +304,9 @@ func (s *Service) Tick(ctx context.Context, policyID uuid.UUID) (bool, error) {
 }
 
 // apply loads policy + runtime, runs Evaluate, persists + audits inside one
-// serializable transaction with epoch CAS.
+// ReadCommitted transaction guarded by the policy_states epoch CAS. State and
+// epoch are read in a single statement so the CAS detects any concurrent
+// transition.
 func (s *Service) apply(ctx context.Context, userID, policyID uuid.UUID, ev state.Event, deviceID *uuid.UUID) error {
 	return s.Store.InTx(ctx, func(ctx context.Context, q store.Querier) error {
 		p, err := store.GetPolicy(ctx, q, policyID)
@@ -280,7 +320,12 @@ func (s *Service) apply(ctx context.Context, userID, policyID uuid.UUID, ev stat
 		if err != nil && ev.Kind != state.EventArm {
 			return fmt.Errorf("policy: no active version: %w", err)
 		}
-		ps, err := store.GetPolicyState(ctx, q, policyID)
+		// Read runtime + lifecycle state in one statement so both come from a
+		// single ReadCommitted snapshot. Reading policies.state in the earlier
+		// GetPolicy statement could pair a stale state with a fresh epoch,
+		// letting the CAS below persist a transition computed from state that
+		// had already changed.
+		ps, curState, err := store.GetPolicyStateWithState(ctx, q, policyID)
 		if err != nil {
 			return err
 		}
@@ -299,7 +344,7 @@ func (s *Service) apply(ctx context.Context, userID, policyID uuid.UUID, ev stat
 		}
 
 		rt := state.Runtime{
-			State:          state.State(p.State),
+			State:          state.State(curState),
 			ArmedAt:        ps.ArmedAt,
 			LastCheckInAt:  ps.LastCheckInAt,
 			NextDueAt:      ps.NextDueAt,
@@ -332,6 +377,35 @@ func (s *Service) apply(ctx context.Context, userID, policyID uuid.UUID, ev stat
 			return err
 		}
 
+		// Revoking or suspending a policy that has already triggered must stop
+		// any in-flight release atomically with the state change, or a stalled
+		// release (e.g. keyvault locked) would still fire when it resumes and
+		// publish content the user explicitly recalled. Safe no-op when there
+		// is no open release.
+		if ev.Kind == state.EventRevoke || ev.Kind == state.EventSuspend {
+			n, err := store.CancelOpenReleasesForPolicy(ctx, q, policyID)
+			if err != nil {
+				return err
+			}
+			if n > 0 {
+				var cancelActor *uuid.UUID
+				if userID != uuid.Nil {
+					uid := userID
+					cancelActor = &uid
+				}
+				if _, err := s.Ledger.AppendTx(ctx, q, audit.Event{
+					ActorKind:   audit.ActorUser,
+					ActorID:     cancelActor,
+					EventType:   "release.canceled",
+					SubjectKind: "policy",
+					SubjectID:   &policyID,
+					Payload:     map[string]any{"reason": string(ev.Kind), "canceled_count": n},
+				}); err != nil {
+					return err
+				}
+			}
+		}
+
 		// Audit.
 		actor := audit.ActorUser
 		var actorID *uuid.UUID
@@ -354,7 +428,7 @@ func (s *Service) apply(ctx context.Context, userID, policyID uuid.UUID, ev stat
 			SubjectKind: "policy",
 			SubjectID:   &policyID,
 			Payload: map[string]any{
-				"from":       p.State,
+				"from":       curState,
 				"to":         string(result.Runtime.State),
 				"event":      string(ev.Kind),
 				"epoch":      newPS.Epoch,
@@ -420,4 +494,31 @@ func effectNames(effs []state.Effect) []string {
 // the user's identity pubkey. Call this at create/mutate time.
 func VerifyPolicySignature(identityPub ed25519.PublicKey, canonicalHash, signature []byte) bool {
 	return crypto.VerifyEd25519(identityPub, canonicalHash, signature)
+}
+
+// verifyAttachmentOwnership ensures every referenced content bundle and
+// destination exists and belongs to userID. Runs inside the caller's
+// transaction so the check is atomic with the policy_version insert —
+// without it any authenticated user could attach another user's bundle to
+// their own policy and have the release pipeline publish foreign content.
+func verifyAttachmentOwnership(ctx context.Context, q store.Querier, userID uuid.UUID, bundleIDs, destIDs []uuid.UUID) error {
+	for _, id := range bundleIDs {
+		b, err := store.GetBundle(ctx, q, id)
+		if err != nil {
+			return fmt.Errorf("policy: bundle %s: %w", id, err)
+		}
+		if b.UserID != userID {
+			return fmt.Errorf("policy: bundle %s: not owner", id)
+		}
+	}
+	for _, id := range destIDs {
+		d, err := store.GetDestination(ctx, q, id)
+		if err != nil {
+			return fmt.Errorf("policy: destination %s: %w", id, err)
+		}
+		if d.UserID != userID {
+			return fmt.Errorf("policy: destination %s: not owner", id)
+		}
+	}
+	return nil
 }

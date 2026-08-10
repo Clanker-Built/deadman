@@ -73,6 +73,19 @@ func VerifyPassword(passphrase, encoded string) error {
 	if _, err := fmt.Sscanf(parts[2], "m=%d,t=%d,p=%d", &mem, &t, &p); err != nil {
 		return fmt.Errorf("auth: bad params: %w", err)
 	}
+	// Bound all params before argon2.IDKey: a corrupt row could otherwise
+	// panic inside x/crypto/argon2 (p=0 or t=0) or OOM-kill the process
+	// (mem near uint32 max allocates mem KiB of blocks). 1<<20 KiB = 1 GiB,
+	// 16x our own HashPassword setting, leaving headroom for future bumps.
+	if p < 1 || p > 255 {
+		return fmt.Errorf("auth: bad parallelism %d", p)
+	}
+	if t < 1 || t > 64 {
+		return fmt.Errorf("auth: bad iterations %d", t)
+	}
+	if mem < 8 || mem > 1<<20 {
+		return fmt.Errorf("auth: bad memory %d", mem)
+	}
 	salt, err := base64.RawStdEncoding.DecodeString(parts[3])
 	if err != nil {
 		return fmt.Errorf("auth: bad salt: %w", err)
@@ -81,7 +94,10 @@ func VerifyPassword(passphrase, encoded string) error {
 	if err != nil {
 		return fmt.Errorf("auth: bad hash: %w", err)
 	}
-	got := argon2.IDKey([]byte(passphrase), salt, t, mem, uint8(p), uint32(len(want)))
+	if len(want) < 16 || len(want) > 1024 {
+		return errors.New("auth: bad hash length")
+	}
+	got := argon2.IDKey([]byte(passphrase), salt, t, mem, uint8(p), uint32(len(want))) // #nosec G115 -- p and len(want) are range-checked above; both conversions provably in range
 	if subtle.ConstantTimeCompare(got, want) != 1 {
 		return errors.New("auth: passphrase mismatch")
 	}

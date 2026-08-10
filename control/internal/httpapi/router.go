@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -67,9 +68,10 @@ func NewRouterWithDeps(d Deps) http.Handler {
 	}
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(20 * time.Second))
+	// 256 MiB bundle uploads over a slow Tor circuit legitimately take far
+	// longer than the global 20s budget; give that one route its own window.
+	r.Use(timeoutExcept(20*time.Second, time.Hour, isBundleUpload))
 	r.Use(securityHeaders)
 	if d.Metrics != nil {
 		r.Use(metricsMiddleware(d.Metrics))
@@ -144,4 +146,36 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// isBundleUpload reports whether the request is the large-bundle upload
+// (POST /api/v1/bundles), which is excluded from the global timeout. The
+// handler still bounds the body with MaxBytesReader and a per-user rate
+// limit, and ReadHeaderTimeout still applies before routing.
+func isBundleUpload(r *http.Request) bool {
+	return r.Method == http.MethodPost &&
+		strings.TrimSuffix(r.URL.Path, "/") == "/api/v1/bundles"
+}
+
+// timeoutExcept applies the standard request timeout to every route except
+// those matched by skip, which get the longer window instead. For skipped
+// requests the connection read/write deadlines are extended to match: the
+// http.Server's 30s Read/WriteTimeout would otherwise sever a slow upload
+// mid-body regardless of what the handler context allows.
+func timeoutExcept(std, long time.Duration, skip func(*http.Request) bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		stdTimed := middleware.Timeout(std)(next)
+		longTimed := middleware.Timeout(long)(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if skip(r) {
+				deadline := time.Now().Add(long)
+				rc := http.NewResponseController(w)
+				_ = rc.SetReadDeadline(deadline)
+				_ = rc.SetWriteDeadline(deadline)
+				longTimed.ServeHTTP(w, r)
+				return
+			}
+			stdTimed.ServeHTTP(w, r)
+		})
+	}
 }

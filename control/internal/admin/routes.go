@@ -77,7 +77,7 @@ func (d *Deps) Mount(r chi.Router, mc MountConfig) {
 	// but whose step-up is stale. Renders a page that performs a fresh
 	// passkey assertion and on success calls POST /ui/admin/reauth/finish.
 	r.Get("/ui/admin/reauth", func(w http.ResponseWriter, req *http.Request) {
-		uid, _, err := d.Auth.Authenticate(req.Context(), req)
+		uid, sess, err := d.Auth.Authenticate(req.Context(), req)
 		if err != nil {
 			http.Redirect(w, req, "/ui/login", http.StatusSeeOther)
 			return
@@ -88,6 +88,9 @@ func (d *Deps) Mount(r chi.Router, mc MountConfig) {
 			return
 		}
 		ctx := webui.WithUser(req.Context(), u)
+		// Attach the session so the renderer emits the CSRF token — without
+		// it the reauth form posts an empty csrf_token and always 403s.
+		ctx = webui.WithSession(ctx, sess)
 		next := req.URL.Query().Get("next")
 		if next == "" || !strings.HasPrefix(next, "/ui/admin") {
 			next = "/ui/admin/"
@@ -130,7 +133,7 @@ func (d *Deps) Mount(r chi.Router, mc MountConfig) {
 		if next == "" || !strings.HasPrefix(next, "/ui/admin") {
 			next = "/ui/admin/"
 		}
-		http.Redirect(w, req, next, http.StatusSeeOther)
+		http.Redirect(w, req, next, http.StatusSeeOther) // #nosec G710 -- next is forced above to the literal prefix "/ui/admin", pinning a same-origin absolute path (cannot start with "//" or a scheme)
 	})
 
 	// All other admin routes require full step-up.
@@ -220,8 +223,12 @@ func (d *Deps) handleBackupRun(mc MountConfig) http.HandlerFunc {
 		}
 		// Spawn in background. The admin page can be refreshed to watch
 		// progress via the running/ok/failed status field.
-		go func() {
-			ctx := context.Background()
+		go func() { // #nosec G118 -- the worker must outlive the request (req ctx would kill pg_dump on redirect); bounded by the timeout below plus the single-flight guard in Manager.Run
+			// Detached from the request on purpose, but not unbounded: a hung
+			// pg_dump or stalled upload dies with the timeout instead of
+			// leaking the goroutine, the child process, and the temp file.
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+			defer cancel()
 			_, err := mc.Backups.Run(ctx, adminU.ID)
 			if err != nil {
 				d.Logger.Warn("admin backup run", "err", err)
@@ -391,7 +398,7 @@ func (d *Deps) handleUserAction(mc MountConfig) http.HandlerFunc {
 		switch action {
 		case "promote":
 			if admin.ID == id {
-				http.Redirect(w, req, "/ui/admin/users/"+id.String()+"?flash=cannot_self", http.StatusSeeOther)
+				http.Redirect(w, req, "/ui/admin/users/"+id.String()+"?flash=cannot_self", http.StatusSeeOther) // #nosec G710 -- constant local path plus uuid.Parse-validated ID; same-origin only
 				return
 			}
 			if err := store.SetUserAdmin(ctx, d.Store.Pool, id, true); err != nil {
@@ -401,7 +408,7 @@ func (d *Deps) handleUserAction(mc MountConfig) http.HandlerFunc {
 			}
 		case "demote":
 			if admin.ID == id {
-				http.Redirect(w, req, "/ui/admin/users/"+id.String()+"?flash=cannot_self", http.StatusSeeOther)
+				http.Redirect(w, req, "/ui/admin/users/"+id.String()+"?flash=cannot_self", http.StatusSeeOther) // #nosec G710 -- constant local path plus uuid.Parse-validated ID; same-origin only
 				return
 			}
 			if err := store.SetUserAdmin(ctx, d.Store.Pool, id, false); err != nil {
@@ -442,7 +449,7 @@ func (d *Deps) handleUserAction(mc MountConfig) http.HandlerFunc {
 			http.Error(w, "unknown action", http.StatusBadRequest)
 			return
 		}
-		http.Redirect(w, req, "/ui/admin/users/"+id.String(), http.StatusSeeOther)
+		http.Redirect(w, req, "/ui/admin/users/"+id.String(), http.StatusSeeOther) // #nosec G710 -- constant local path plus uuid.Parse-validated ID; same-origin only
 	}
 }
 
@@ -820,7 +827,7 @@ func (d *Deps) handleConfigTestSMTP(mc MountConfig) http.HandlerFunc {
 		if to == "" {
 			to = admin.Email
 		}
-		err := sender.Send([]string{to},
+		err := sender.Send(req.Context(), []string{to},
 			"Deadman · SMTP test",
 			"This is a test message from the Deadman admin panel.\n"+
 				"If you received this, SMTP is correctly configured.\n")

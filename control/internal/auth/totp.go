@@ -7,7 +7,7 @@ package auth
 import (
 	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha1"
+	"crypto/sha1" // #nosec G505 -- RFC 6238 mandates HMAC-SHA1 for authenticator-app interop; used solely as the hmac.New hash, never for collision resistance
 	"crypto/subtle"
 	"encoding/base32"
 	"encoding/binary"
@@ -58,7 +58,7 @@ func totpAt(secretBase32 string, t time.Time) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("totp: bad secret: %w", err)
 	}
-	step := uint64(t.Unix()) / totpStepSeconds
+	step := uint64(t.Unix()) / totpStepSeconds // #nosec G115 -- t is TOTPVerify's time.Now() ±1 step; Unix() is non-negative for any post-1970 clock, cannot wrap
 	var msg [8]byte
 	binary.BigEndian.PutUint64(msg[:], step)
 	mac := hmac.New(sha1.New, key)

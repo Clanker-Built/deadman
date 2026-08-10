@@ -162,6 +162,28 @@ func GetActivePolicyVersion(ctx context.Context, q Querier, policyID uuid.UUID) 
 	return &v, err
 }
 
+// GetPolicyVersionByID loads a specific policy version by its own ID. The
+// release worker uses this to release exactly the version pinned in the
+// release transaction, not whatever version happens to be active now.
+func GetPolicyVersionByID(ctx context.Context, q Querier, versionID uuid.UUID) (*PolicyVersion, error) {
+	var v PolicyVersion
+	err := q.QueryRow(ctx,
+		`SELECT pv.id, pv.policy_id, pv.version, pv.interval_days, pv.grace_period_hours, pv.hold_period_hours,
+		        pv.warning_schedule, pv.check_in_requirements, pv.release_mode,
+		        pv.destination_ids, pv.content_bundle_ids, pv.effective_at,
+		        pv.user_signature, pv.canonical_hash, pv.created_at
+		 FROM policy_versions pv
+		 WHERE pv.id = $1`, versionID,
+	).Scan(&v.ID, &v.PolicyID, &v.Version, &v.IntervalDays, &v.GracePeriodHours, &v.HoldPeriodHours,
+		&v.WarningSchedule, &v.CheckInRequirements, &v.ReleaseMode,
+		&v.DestinationIDs, &v.ContentBundleIDs, &v.EffectiveAt,
+		&v.UserSignature, &v.CanonicalHash, &v.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return &v, err
+}
+
 // GetPolicyState returns the runtime row, creating it if missing.
 func GetPolicyState(ctx context.Context, q Querier, policyID uuid.UUID) (*PolicyState, error) {
 	var ps PolicyState
@@ -177,13 +199,39 @@ func GetPolicyState(ctx context.Context, q Querier, policyID uuid.UUID) (*Policy
 	return &ps, err
 }
 
+// GetPolicyStateWithState returns the runtime row plus the policy's current
+// lifecycle state, read in a single statement so both come from one snapshot.
+// Every writer of policies.state (UpdatePolicyStateCAS) bumps
+// policy_states.epoch in the same transaction, so a caller that evaluates a
+// transition against this pair and then CASes on the epoch cannot act on a
+// state that changed after the read — the epoch would no longer match.
+func GetPolicyStateWithState(ctx context.Context, q Querier, policyID uuid.UUID) (*PolicyState, string, error) {
+	var ps PolicyState
+	var policyState string
+	err := q.QueryRow(ctx,
+		`SELECT ps.policy_id, ps.armed_at, ps.last_checkin_at, ps.last_checkin_device_id,
+		        ps.next_due_at, ps.grace_expires_at, ps.hold_expires_at, ps.trigger_at, ps.epoch, ps.updated_at,
+		        p.state
+		 FROM policy_states ps JOIN policies p ON p.id = ps.policy_id
+		 WHERE ps.policy_id = $1`, policyID,
+	).Scan(&ps.PolicyID, &ps.ArmedAt, &ps.LastCheckInAt, &ps.LastCheckInDeviceID,
+		&ps.NextDueAt, &ps.GraceExpiresAt, &ps.HoldExpiresAt, &ps.TriggerAt, &ps.Epoch, &ps.UpdatedAt, &policyState)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, "", ErrNotFound
+	}
+	return &ps, policyState, err
+}
+
 // UpdatePolicyStateCAS updates the runtime row only if the epoch matches.
 // Returns ErrConcurrentUpdate if the epoch moved under us — caller should
-// reload and re-evaluate.
+// reload and re-evaluate. last_checkin_device_id is only overwritten when
+// deviceID is non-nil, so system transitions (scheduler ticks pass nil)
+// preserve the device recorded by the last device check-in.
 func UpdatePolicyStateCAS(ctx context.Context, q Querier, ps *PolicyState, expectedEpoch int64, newState string, deviceID *uuid.UUID) error {
 	tag, err := q.Exec(ctx,
 		`UPDATE policy_states
-		 SET armed_at = $2, last_checkin_at = $3, last_checkin_device_id = $4,
+		 SET armed_at = $2, last_checkin_at = $3,
+		     last_checkin_device_id = COALESCE($4, last_checkin_device_id),
 		     next_due_at = $5, grace_expires_at = $6, hold_expires_at = $7, trigger_at = $8,
 		     epoch = $9, updated_at = now()
 		 WHERE policy_id = $1 AND epoch = $10`,
@@ -200,15 +248,18 @@ func UpdatePolicyStateCAS(ctx context.Context, q Querier, ps *PolicyState, expec
 	return err
 }
 
-// SelectDuePolicyIDs returns up to n armed policy IDs whose next deadline
-// has passed and locks them for update so concurrent schedulers don't
-// double-evaluate.
+// SelectDuePolicyIDs returns up to n armed policy IDs whose next actionable
+// deadline (state-dependent) has passed. SKIP LOCKED stops concurrent
+// schedulers from selecting the same rows while their selection transactions
+// overlap; the locks end when that tx commits, so the epoch CAS in
+// UpdatePolicyStateCAS is what actually prevents double-transitions.
 func SelectDuePolicyIDs(ctx context.Context, q Querier, now time.Time, n int) ([]uuid.UUID, error) {
 	rows, err := q.Query(ctx,
 		`SELECT p.id FROM policies p JOIN policy_states ps ON ps.policy_id = p.id
-		 WHERE p.state IN ('healthy','warning','grace','hold')
-		   AND (ps.next_due_at <= $1 OR ps.grace_expires_at <= $1 OR ps.hold_expires_at <= $1
-		        OR (p.state = 'healthy' AND ps.next_due_at - interval '24 hours' <= $1))
+		 WHERE (p.state = 'healthy' AND ps.next_due_at - interval '24 hours' <= $1)
+		    OR (p.state = 'warning' AND ps.next_due_at <= $1)
+		    OR (p.state = 'grace' AND ps.grace_expires_at <= $1)
+		    OR (p.state = 'hold' AND ps.hold_expires_at <= $1)
 		 ORDER BY ps.updated_at
 		 LIMIT $2
 		 FOR UPDATE OF ps SKIP LOCKED`, now, n)

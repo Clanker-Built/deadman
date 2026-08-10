@@ -15,8 +15,8 @@
 package ratelimit
 
 import (
+	"net"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -62,6 +62,9 @@ func (l *Limiter) Allow(key string) bool {
 	l.mu.Lock()
 	e, ok := l.buckets[key]
 	if !ok {
+		if len(l.buckets) >= maxKeys {
+			l.evictOneLocked()
+		}
 		e = &entry{lim: rate.NewLimiter(l.rate, l.burst)}
 		l.buckets[key] = e
 	}
@@ -88,16 +91,17 @@ func (l *Limiter) gcLoop() {
 // KeyFunc extracts a limiting key from a request.
 type KeyFunc func(r *http.Request) string
 
-// ClientIP extracts a remote-addr, honoring X-Forwarded-For's LAST hop (the
-// one we trust — our own reverse proxy). Falls back to RemoteAddr.
+// ClientIP returns the host part of the connection's RemoteAddr.
+// X-Forwarded-For is deliberately ignored: this server terminates client
+// connections itself (Tor .onion / direct listener), so any forwarding
+// header is attacker-supplied and would let a client mint a fresh
+// rate-limit bucket per request. If a trusted reverse proxy is ever put
+// in front, gate header parsing on an explicit trusted-proxy allowlist
+// rather than re-enabling unconditional trust.
 func ClientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.Split(xff, ",")
-		return strings.TrimSpace(parts[len(parts)-1])
-	}
-	host := r.RemoteAddr
-	if i := strings.LastIndex(host, ":"); i >= 0 {
-		host = host[:i]
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
 	}
 	return host
 }
@@ -129,5 +133,31 @@ func Composite(mws ...func(http.Handler) http.Handler) func(http.Handler) http.H
 			h = mws[i](h)
 		}
 		return h
+	}
+}
+
+// maxKeys caps the bucket map so attacker-minted keys (spoofed addresses,
+// invented emails) cannot grow memory without bound between GC sweeps.
+// When full, an approximately-stalest entry is evicted.
+const maxKeys = 65536
+
+// evictOneLocked deletes the stalest entry among a small random sample.
+// Caller must hold l.mu. Sampling keeps eviction O(1); Go map iteration
+// order is randomized, so repeated calls touch different entries.
+func (l *Limiter) evictOneLocked() {
+	var oldestKey string
+	var oldestSeen time.Time
+	n := 0
+	for k, e := range l.buckets {
+		if n == 0 || e.lastSeen.Before(oldestSeen) {
+			oldestKey, oldestSeen = k, e.lastSeen
+		}
+		n++
+		if n >= 16 {
+			break
+		}
+	}
+	if oldestKey != "" {
+		delete(l.buckets, oldestKey)
 	}
 }

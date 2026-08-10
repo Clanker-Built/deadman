@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
@@ -42,9 +43,60 @@ type Service struct {
 	ledger              *audit.Ledger
 	bootstrapAdminEmail string
 	// In-memory ceremony state keyed by session ID. Production should use
-	// Redis or a signed cookie; fine for M1 dev.
-	pending  map[string]*webauthn.SessionData
+	// Redis or a signed cookie; fine for M1 dev. Entries expire after
+	// ceremonyTTL; putPending sweeps stale ones so abandoned Begin*
+	// ceremonies cannot grow the map without bound.
+	pending  map[string]*pendingCeremony
 	pendingM sync.Mutex
+}
+
+// ceremonyTTL bounds how long a Begin* ceremony may sit unfinished. Client-
+// side WebAuthn timeouts are far shorter; 10 minutes is generous.
+const ceremonyTTL = 10 * time.Minute
+
+// pendingCeremony is the in-memory state carried from Begin* to Finish*.
+type pendingCeremony struct {
+	sess    *webauthn.SessionData
+	created time.Time
+	// newUser is set on registration ceremonies for emails with no existing
+	// account. Nothing is persisted at Begin; FinishRegister creates the row.
+	newUser *pendingNewUser
+}
+
+// pendingNewUser is the identity a registration ceremony creates on success.
+// id doubles as the WebAuthn user handle fixed at Begin, so the row must be
+// created with exactly this ID.
+type pendingNewUser struct {
+	id          uuid.UUID
+	email       string
+	displayName string
+}
+
+// putPending stores ceremony state and sweeps expired entries.
+func (s *Service) putPending(id string, pc *pendingCeremony) {
+	s.pendingM.Lock()
+	defer s.pendingM.Unlock()
+	for k, v := range s.pending {
+		if time.Since(v.created) > ceremonyTTL {
+			delete(s.pending, k)
+		}
+	}
+	s.pending[id] = pc
+}
+
+// takePending removes and returns ceremony state; nil if unknown or expired.
+func (s *Service) takePending(id string) *pendingCeremony {
+	s.pendingM.Lock()
+	defer s.pendingM.Unlock()
+	pc, ok := s.pending[id]
+	if !ok {
+		return nil
+	}
+	delete(s.pending, id)
+	if time.Since(pc.created) > ceremonyTTL {
+		return nil
+	}
+	return pc
 }
 
 func NewService(cfg Config, s *store.Store, l *audit.Ledger) (*Service, error) {
@@ -61,7 +113,7 @@ func NewService(cfg Config, s *store.Store, l *audit.Ledger) (*Service, error) {
 		store:               s,
 		ledger:              l,
 		bootstrapAdminEmail: cfg.BootstrapAdminEmail,
-		pending:             make(map[string]*webauthn.SessionData),
+		pending:             make(map[string]*pendingCeremony),
 	}, nil
 }
 
@@ -108,74 +160,86 @@ func (s *Service) loadUser(ctx context.Context, u *store.User) (*userAdapter, er
 	return &userAdapter{id: u.ID, name: u.Email, displayName: u.DisplayName, creds: wc}, nil
 }
 
-// BeginRegister starts passkey registration. If the email doesn't exist it
-// creates a draft user. Returns the credential creation options the client
-// will pass to navigator.credentials.create(), plus a sessionID the caller
-// must echo to FinishRegister.
+// BeginRegister starts passkey registration. For a new email nothing is
+// persisted — the would-be user is held in memory alongside the ceremony
+// state and only created when FinishRegister succeeds, so an unauthenticated
+// begin cannot squat draft users on arbitrary emails. Returns the credential
+// creation options the client will pass to navigator.credentials.create(),
+// plus a sessionID the caller must echo to FinishRegister.
 func (s *Service) BeginRegister(ctx context.Context, email, displayName string) (opts *protocol.CredentialCreation, sessionID string, err error) {
-	var u *store.User
-	u, err = store.GetUserByEmail(ctx, s.store.Pool, email)
-	if errors.Is(err, store.ErrNotFound) {
-		err = s.store.InTx(ctx, func(ctx context.Context, q store.Querier) error {
-			var e error
-			u, e = store.CreateUser(ctx, q, email, displayName, nil)
-			if e != nil {
-				return e
-			}
-			_, e = s.ledger.AppendTx(ctx, q, audit.Event{
-				ActorKind: audit.ActorUser,
-				ActorID:   &u.ID,
-				EventType: "user.created",
-				Payload:   map[string]any{"email": email},
-			})
-			return e
-		})
-	}
-	if err != nil {
+	var wu *userAdapter
+	var newUser *pendingNewUser
+	u, err := store.GetUserByEmail(ctx, s.store.Pool, email)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		newUser = &pendingNewUser{id: uuid.New(), email: email, displayName: displayName}
+		wu = &userAdapter{id: newUser.id, name: email, displayName: displayName}
+	case err != nil:
 		return nil, "", err
-	}
-	wu, err := s.loadUser(ctx, u)
-	if err != nil {
-		return nil, "", err
+	default:
+		wu, err = s.loadUser(ctx, u)
+		if err != nil {
+			return nil, "", err
+		}
 	}
 	opts, sess, err := s.w.BeginRegistration(wu)
 	if err != nil {
 		return nil, "", fmt.Errorf("begin registration: %w", err)
 	}
 	sessionID = uuid.NewString()
-	s.pendingM.Lock()
-	s.pending[sessionID] = sess
-	s.pendingM.Unlock()
+	s.putPending(sessionID, &pendingCeremony{sess: sess, created: time.Now(), newUser: newUser})
 	return opts, sessionID, nil
 }
 
-// FinishRegister completes the ceremony and persists the new credential.
+// FinishRegister completes the ceremony and persists the new credential —
+// and, for a first-time email, the user row itself (deferred from Begin so
+// that an abandoned or failed ceremony persists nothing).
 func (s *Service) FinishRegister(ctx context.Context, email, sessionID string, response *http.Request) error {
-	s.pendingM.Lock()
-	sess, ok := s.pending[sessionID]
-	if ok {
-		delete(s.pending, sessionID)
-	}
-	s.pendingM.Unlock()
-	if !ok {
+	pc := s.takePending(sessionID)
+	if pc == nil {
 		return errors.New("auth: unknown session")
 	}
-	u, err := store.GetUserByEmail(ctx, s.store.Pool, email)
-	if err != nil {
-		return err
+	var wu *userAdapter
+	if pc.newUser != nil {
+		if !strings.EqualFold(pc.newUser.email, email) {
+			return errors.New("auth: session does not match email")
+		}
+		wu = &userAdapter{id: pc.newUser.id, name: pc.newUser.email, displayName: pc.newUser.displayName}
+	} else {
+		u, err := store.GetUserByEmail(ctx, s.store.Pool, email)
+		if err != nil {
+			return err
+		}
+		wu, err = s.loadUser(ctx, u)
+		if err != nil {
+			return err
+		}
 	}
-	wu, err := s.loadUser(ctx, u)
-	if err != nil {
-		return err
-	}
-	cred, err := s.w.FinishRegistration(wu, *sess, response)
+	cred, err := s.w.FinishRegistration(wu, *pc.sess, response)
 	if err != nil {
 		return fmt.Errorf("finish registration: %w", err)
 	}
+	userID := wu.id
 	err = s.store.InTx(ctx, func(ctx context.Context, q store.Querier) error {
+		if pc.newUser != nil {
+			// The email UNIQUE constraint makes this race-safe: if the email
+			// was claimed between Begin and Finish, the insert (and tx) fail.
+			u, e := store.CreateUserWithID(ctx, q, pc.newUser.id, pc.newUser.email, pc.newUser.displayName, nil)
+			if e != nil {
+				return e
+			}
+			if _, e := s.ledger.AppendTx(ctx, q, audit.Event{
+				ActorKind: audit.ActorUser,
+				ActorID:   &u.ID,
+				EventType: "user.created",
+				Payload:   map[string]any{"email": u.Email},
+			}); e != nil {
+				return e
+			}
+		}
 		if err := store.InsertWebAuthnCredential(ctx, q, &store.WebAuthnCredential{
 			ID:             cred.ID,
-			UserID:         u.ID,
+			UserID:         userID,
 			PublicKey:      cred.PublicKey,
 			SignCount:      cred.Authenticator.SignCount,
 			Transports:     transportsStrings(cred.Transport),
@@ -188,10 +252,10 @@ func (s *Service) FinishRegister(ctx context.Context, email, sessionID string, r
 		}
 		_, err := s.ledger.AppendTx(ctx, q, audit.Event{
 			ActorKind:   audit.ActorUser,
-			ActorID:     &u.ID,
+			ActorID:     &userID,
 			EventType:   "passkey.registered",
 			SubjectKind: "user",
-			SubjectID:   &u.ID,
+			SubjectID:   &userID,
 			Payload: map[string]any{
 				"credential_id": fmt.Sprintf("%x", cred.ID),
 				"aaguid":        fmt.Sprintf("%x", cred.Authenticator.AAGUID),
@@ -217,21 +281,14 @@ func (s *Service) BeginLogin(ctx context.Context, email string) (*protocol.Crede
 		return nil, "", fmt.Errorf("begin login: %w", err)
 	}
 	sessionID := uuid.NewString()
-	s.pendingM.Lock()
-	s.pending[sessionID] = sess
-	s.pendingM.Unlock()
+	s.putPending(sessionID, &pendingCeremony{sess: sess, created: time.Now()})
 	return opts, sessionID, nil
 }
 
 // FinishLogin completes assertion and returns the authenticated user ID.
 func (s *Service) FinishLogin(ctx context.Context, email, sessionID string, response *http.Request) (uuid.UUID, error) {
-	s.pendingM.Lock()
-	sess, ok := s.pending[sessionID]
-	if ok {
-		delete(s.pending, sessionID)
-	}
-	s.pendingM.Unlock()
-	if !ok {
+	pc := s.takePending(sessionID)
+	if pc == nil {
 		return uuid.Nil, errors.New("auth: unknown session")
 	}
 	u, err := store.GetUserByEmail(ctx, s.store.Pool, email)
@@ -242,7 +299,7 @@ func (s *Service) FinishLogin(ctx context.Context, email, sessionID string, resp
 	if err != nil {
 		return uuid.Nil, err
 	}
-	cred, err := s.w.FinishLogin(wu, *sess, response)
+	cred, err := s.w.FinishLogin(wu, *pc.sess, response)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("finish login: %w", err)
 	}

@@ -80,8 +80,8 @@ func NewLedger(key ed25519.PrivateKey) *Ledger {
 }
 
 // Append writes a single event inside a transaction so the hash chain cannot
-// interleave with concurrent writers. Uses SELECT ... FOR UPDATE on the last
-// row to serialize appenders.
+// interleave with concurrent writers. Appenders are serialized by a
+// transaction-scoped advisory lock (see appendTx).
 func (l *Ledger) Append(ctx context.Context, s *store.Store, e Event) (*Record, error) {
 	if e.EventType == "" {
 		return nil, errors.New("audit: event_type required")
@@ -104,12 +104,26 @@ func (l *Ledger) AppendTx(ctx context.Context, q store.Querier, e Event) (*Recor
 	return l.appendTx(ctx, q, e)
 }
 
+// auditChainLockKey is the pg_advisory_xact_lock key that serializes audit
+// appenders. Arbitrary fixed value ("auditcha" in ASCII); it must simply be
+// unique among advisory-lock keys used against this database (none others
+// exist today).
+const auditChainLockKey int64 = 0x6175646974636861
+
 func (l *Ledger) appendTx(ctx context.Context, q store.Querier, e Event) (*Record, error) {
-	// Lock the chain tip. If no rows yet, skip the lock — seq 1 is the first.
+	// Serialize appenders for the rest of the transaction. FOR UPDATE on the
+	// tip row is not enough: under READ COMMITTED a blocked appender re-checks
+	// only the row it locked and never re-scans for the winner's newly
+	// committed tip, so both would read the same prev_hash and fork the
+	// chain. The advisory lock is released automatically at commit/rollback.
+	if _, err := q.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, auditChainLockKey); err != nil {
+		return nil, fmt.Errorf("audit: acquire chain lock: %w", err)
+	}
+	// Read the chain tip. If no rows yet, seq 1 is the first.
 	var prevHash [32]byte
 	var prevBytes []byte
 	err := q.QueryRow(ctx,
-		`SELECT payload_hash FROM audit_events ORDER BY seq DESC LIMIT 1 FOR UPDATE`,
+		`SELECT payload_hash FROM audit_events ORDER BY seq DESC LIMIT 1`,
 	).Scan(&prevBytes)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("audit: read tip: %w", err)
@@ -123,6 +137,15 @@ func (l *Ledger) appendTx(ctx context.Context, q store.Querier, e Event) (*Recor
 	payloadJSON, err := json.Marshal(e.Payload)
 	if err != nil {
 		return nil, fmt.Errorf("audit: marshal payload: %w", err)
+	}
+	// Hash the canonical payload form, not the raw insert bytes. The payload
+	// column is JSONB: Postgres rewrites key order, whitespace, and number
+	// formatting on storage, so Verify can only recompute the hash from a
+	// form both sides can derive (see canonicalPayload). payloadJSON itself
+	// is still what gets stored.
+	hashPayload, err := canonicalPayload(payloadJSON)
+	if err != nil {
+		return nil, fmt.Errorf("audit: canonicalize payload: %w", err)
 	}
 
 	// Truncate to microseconds — Postgres TIMESTAMPTZ stores µs precision,
@@ -139,7 +162,7 @@ func (l *Ledger) appendTx(ctx context.Context, q store.Querier, e Event) (*Recor
 		EventType:   e.EventType,
 		SubjectKind: e.SubjectKind,
 		SubjectID:   e.SubjectID,
-		Payload:     payloadJSON,
+		Payload:     hashPayload,
 		PrevHash:    prevHash[:],
 	})
 	payloadHash := crypto.SHA256(canon)
@@ -330,6 +353,13 @@ func Verify(ctx context.Context, q store.Querier, servicePub ed25519.PublicKey) 
 		if r.SubjectKind != nil {
 			subjectKind = *r.SubjectKind
 		}
+		// The JSONB column normalized the payload bytes hashed at insert (key
+		// order, spacing, number formatting), so recompute the same canonical
+		// form instead of hashing the stored bytes directly.
+		canonPayload, err := canonicalPayload(r.Payload)
+		if err != nil {
+			return fmt.Errorf("audit: canonicalize payload at seq=%d: %w", r.Seq, err)
+		}
 		canon := canonicalize(canonicalEvent{
 			ID:          r.ID,
 			OccurredAt:  r.OccurredAt.UTC(),
@@ -338,7 +368,7 @@ func Verify(ctx context.Context, q store.Querier, servicePub ed25519.PublicKey) 
 			EventType:   r.EventType,
 			SubjectKind: subjectKind,
 			SubjectID:   r.SubjectID,
-			Payload:     r.Payload,
+			Payload:     canonPayload,
 			PrevHash:    r.PrevHash[:],
 		})
 		expectHash := crypto.SHA256(canon)
@@ -354,6 +384,64 @@ func Verify(ctx context.Context, q store.Querier, servicePub ed25519.PublicKey) 
 		expectedPrev = r.PayloadHash
 	}
 	return rows.Err()
+}
+
+// Head pins a point on the audit chain: a row's seq and payload_hash.
+// Callers capture it via CurrentHead after trusted writes and later pass it
+// to VerifyWithHead. Plain Verify cannot see tail truncation — a chain cut
+// back to any earlier row (or to zero rows) still verifies as an intact,
+// shorter chain — so external verifiers should pin a head.
+type Head struct {
+	Seq  int64
+	Hash [32]byte
+}
+
+// CurrentHead returns the chain tip, or (nil, nil) when the ledger is empty.
+func CurrentHead(ctx context.Context, q store.Querier) (*Head, error) {
+	var h Head
+	var hb []byte
+	err := q.QueryRow(ctx,
+		`SELECT seq, payload_hash FROM audit_events ORDER BY seq DESC LIMIT 1`,
+	).Scan(&h.Seq, &hb)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("audit: read head: %w", err)
+	}
+	if len(hb) != 32 {
+		return nil, fmt.Errorf("audit: head hash wrong size: %d", len(hb))
+	}
+	copy(h.Hash[:], hb)
+	return &h, nil
+}
+
+// VerifyWithHead runs Verify and additionally confirms the pinned head is
+// still on the chain: the row at expected.Seq must exist and carry the
+// pinned hash. Appends after the pin are fine — the pin anchors the prefix
+// up to it — but truncation or rewrite at or before the pin is reported,
+// including truncation to zero rows, which plain Verify accepts.
+func VerifyWithHead(ctx context.Context, q store.Querier, servicePub ed25519.PublicKey, expected Head) error {
+	if err := Verify(ctx, q, servicePub); err != nil {
+		return err
+	}
+	var hb []byte
+	err := q.QueryRow(ctx,
+		`SELECT payload_hash FROM audit_events WHERE seq = $1`, expected.Seq,
+	).Scan(&hb)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("audit: pinned head seq=%d missing — tail truncated", expected.Seq)
+	}
+	if err != nil {
+		return fmt.Errorf("audit: read pinned head: %w", err)
+	}
+	var got [32]byte
+	copy(got[:], hb)
+	if len(hb) != 32 || got != expected.Hash {
+		return fmt.Errorf("audit: pinned head hash mismatch at seq=%d (have %s, pinned %s)",
+			expected.Seq, hex.EncodeToString(hb), hex.EncodeToString(expected.Hash[:]))
+	}
+	return nil
 }
 
 // canonicalEvent is the field order the canonical serializer commits to.
@@ -388,4 +476,30 @@ func nullString(s string) any {
 		return nil
 	}
 	return s
+}
+
+// canonicalPayload maps semantically equal JSON to identical bytes: decode
+// into interface values, re-encode with encoding/json (map keys sorted,
+// fixed spacing and number formatting). Needed because payload is stored as
+// JSONB — Postgres rewrites key order, whitespace, and number text (e.g.
+// 1e3 becomes 1000), so insert-time bytes and read-back bytes differ on
+// honest ledgers. Both appendTx and Verify hash this canonical form.
+//
+// Numbers deliberately pass through float64 on both sides; that shared
+// normalization is what makes the two sides agree. Do not switch this to
+// json.Decoder.UseNumber — preserving the original number text on one side
+// only would reintroduce the mismatch jsonb creates on the other.
+func canonicalPayload(raw json.RawMessage) (json.RawMessage, error) {
+	if len(raw) == 0 {
+		return json.RawMessage("null"), nil
+	}
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return nil, fmt.Errorf("decode: %w", err)
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil, fmt.Errorf("re-encode: %w", err)
+	}
+	return b, nil
 }

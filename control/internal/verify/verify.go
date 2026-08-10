@@ -71,20 +71,25 @@ func (w *Worker) Tick(ctx context.Context) error {
 		if err := w.verifyOne(ctx, b); err != nil {
 			w.Logger.Warn("verify: one", "bundle_id", b.ID, "err", err)
 		}
+		if err := w.markVerified(ctx, b.ID); err != nil {
+			w.Logger.Warn("verify: mark verified", "bundle_id", b.ID, "err", err)
+		}
 	}
 	return nil
 }
 
 func (w *Worker) selectStale(ctx context.Context) ([]store.ContentBundle, error) {
-	// "Stale" is approximated by created_at < now - StaleAfter since we
-	// don't yet persist last_verified_at. M4+1 migration can add it; for
-	// now we pick the oldest N bundles that still exist.
+	// Due = never verified, or last verified more than StaleAfter ago.
+	// Oldest-verified first (NULLs first) so every bundle rotates through.
+	cutoff := time.Now().Add(-w.StaleAfter)
 	rows, err := w.Store.Pool.Query(ctx,
 		`SELECT id, user_id, version, label, manifest_hash, manifest, wrapped_bundle_key, wrap_scheme,
 		        primary_uri, backup_uri, size_bytes, ciphertext_sha256, created_at, deleted_at
 		 FROM content_bundles
 		 WHERE deleted_at IS NULL
-		 ORDER BY created_at ASC LIMIT $1`, w.BatchSize)
+		   AND (last_verified_at IS NULL OR last_verified_at < $1)
+		 ORDER BY last_verified_at ASC NULLS FIRST, created_at ASC
+		 LIMIT $2`, cutoff, w.BatchSize)
 	if err != nil {
 		return nil, err
 	}
@@ -182,5 +187,12 @@ func errString(e error) string {
 	return e.Error()
 }
 
-// Unused var suppresses unused import if uuid gets pruned by refactor.
-var _ = uuid.Nil
+// markVerified stamps the bundle's last_verified_at after a check attempt,
+// whatever the outcome — findings are recorded in the audit ledger, and
+// re-checking a broken bundle every tick would hammer both clouds without
+// producing new signal.
+func (w *Worker) markVerified(ctx context.Context, id uuid.UUID) error {
+	_, err := w.Store.Pool.Exec(ctx,
+		`UPDATE content_bundles SET last_verified_at = now() WHERE id = $1`, id)
+	return err
+}

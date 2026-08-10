@@ -18,7 +18,9 @@
 //     catches replay of an old (nonce, counter, sig) triple even within the
 //     TTL window.
 //   - Cross-device replay: signature is bound to a specific device by the
-//     device key registered at enrollment.
+//     device key registered at enrollment, and each nonce is bound at
+//     issuance to the (device, user) it was issued for — Verify rejects a
+//     nonce presented by any other device.
 //   - Cross-purpose: domain-separation prefix "deadman/checkin/v1".
 //   - Revoked devices: enforced at nonce issuance.
 package checkin
@@ -119,7 +121,7 @@ func Payload(nonce [NonceSize]byte, counter int64) [32]byte {
 	h.Write([]byte(DomainPrefix))
 	h.Write(nonce[:])
 	var cbuf [8]byte
-	binary.BigEndian.PutUint64(cbuf[:], uint64(counter))
+	binary.BigEndian.PutUint64(cbuf[:], uint64(counter)) // #nosec G115 -- same-width int64->uint64 reinterpretation, bijective hash-input serialization; Verify rejects counter <= lastCounter (monotonic, starts at 0) before hashing
 	h.Write(cbuf[:])
 	var out [32]byte
 	copy(out[:], h.Sum(nil))
@@ -127,11 +129,12 @@ func Payload(nonce [NonceSize]byte, counter int64) [32]byte {
 }
 
 // Verify validates a presented check-in signature against the stored nonce
-// and device public key. It also enforces monotonic counter strictness.
+// and device public key. It also enforces monotonic counter strictness and
+// that the nonce was issued to the presenting (device, user) pair.
 //
 // Returns the issued record on success so the caller can proceed with the
 // business-level action (reset policy state, audit).
-func Verify(ctx context.Context, s *Store, nonce [NonceSize]byte, counter int64, sig []byte, devicePub ed25519.PublicKey, lastCounter int64) (Issued, error) {
+func Verify(ctx context.Context, s *Store, nonce [NonceSize]byte, deviceID, userID uuid.UUID, counter int64, sig []byte, devicePub ed25519.PublicKey, lastCounter int64) (Issued, error) {
 	_ = ctx
 	if len(devicePub) != ed25519.PublicKeySize {
 		return Issued{}, errors.New("checkin: invalid device public key")
@@ -142,6 +145,10 @@ func Verify(ctx context.Context, s *Store, nonce [NonceSize]byte, counter int64,
 	is, ok := s.Consume(nonce)
 	if !ok {
 		return Issued{}, errors.New("checkin: nonce unknown or expired")
+	}
+	// Nonces are single-use and bound at issuance; a mismatch burns the nonce.
+	if is.DeviceID != deviceID || is.UserID != userID {
+		return Issued{}, errors.New("checkin: nonce not issued to this device")
 	}
 	digest := Payload(nonce, counter)
 	if !ed25519.Verify(devicePub, digest[:], sig) {

@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -37,6 +38,10 @@ type Manager struct {
 	// KeepCount: keep this many successful backups; older ones are GC'd.
 	// <= 0 disables retention (keep everything).
 	KeepCount int
+
+	// running enforces the single-flight contract behind ErrAlreadyRunning:
+	// concurrent Run calls must not stack pg_dump child processes.
+	running atomic.Bool
 }
 
 // ErrAlreadyRunning is returned if a Run is invoked while one is in flight.
@@ -54,6 +59,10 @@ func (m *Manager) Run(ctx context.Context, actor uuid.UUID) (*store.AdminBackup,
 	if m == nil || m.Destination == nil {
 		return nil, errors.New("backup: no storage destination configured")
 	}
+	if !m.running.CompareAndSwap(false, true) {
+		return nil, ErrAlreadyRunning
+	}
+	defer m.running.Store(false)
 	if _, err := exec.LookPath("pg_dump"); err != nil {
 		return nil, ErrPgDumpMissing
 	}
@@ -134,7 +143,7 @@ func (m *Manager) runPipeline(ctx context.Context, key string) (int64, [32]byte,
 
 	// Run pg_dump. --format=custom produces a file that pg_restore reads.
 	// --no-owner / --no-privileges keep the dump portable across environments.
-	cmd := exec.CommandContext(ctx, "pg_dump",
+	cmd := exec.CommandContext(ctx, "pg_dump", // #nosec G204 -- argv is fixed literals plus m.DatabaseURL, set once at startup from operator env (DEADMAN_DATABASE_URL); no shell, never request/DB-derived
 		"--format=custom", "--no-owner", "--no-privileges",
 		m.DatabaseURL)
 	cmd.Stdout = gz
@@ -179,6 +188,15 @@ func (m *Manager) gc(ctx context.Context) error {
 		return nil
 	}
 	for _, b := range rows[:excess] {
+		if b.Bucket != m.Destination.Bucket() {
+			// Row was written to a different destination than the one
+			// currently configured (bucket migration). Deleting through the
+			// current client would target the wrong endpoint/bucket — leave
+			// it for manual cleanup per the runbook.
+			m.Logger.Warn("backup GC skipping row recorded on a different bucket",
+				"id", b.ID, "row_bucket", b.Bucket, "current_bucket", m.Destination.Bucket())
+			continue
+		}
 		if _, err := m.Destination.RawS3().DeleteObject(ctx, &awss3.DeleteObjectInput{
 			Bucket: aws.String(b.Bucket), Key: aws.String(b.Key),
 		}); err != nil {

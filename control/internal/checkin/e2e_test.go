@@ -147,6 +147,19 @@ func TestCheckinFullFlow(t *testing.T) {
 		"counter":   counter,
 		"signature": base64.RawURLEncoding.EncodeToString(sig),
 	})
+
+	// Freshly enrolled: still inside the 24h delayed-trust window, so the
+	// verify must be rejected even though the signature is valid.
+	dResp := doReal(t, server.URL+"/api/v1/checkin/verify", cookie, verifyBody)
+	defer dResp.Close()
+	if dResp.Status() != http.StatusForbidden {
+		t.Fatalf("delayed-trust: want 403, got %d body=%s", dResp.Status(), dResp.Body())
+	}
+
+	// Backdate the trust window; the same (unconsumed) nonce then verifies.
+	if _, err := s.Pool.Exec(ctx, `UPDATE devices SET trusted_after = now() - interval '1 hour' WHERE id = $1::uuid`, deviceID); err != nil {
+		t.Fatal(err)
+	}
 	vResp := doReal(t, server.URL+"/api/v1/checkin/verify", cookie, verifyBody)
 	defer vResp.Close()
 	if vResp.Status() != 200 {

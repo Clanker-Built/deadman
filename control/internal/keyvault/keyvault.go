@@ -421,7 +421,7 @@ func ReadFile(path string) (*VaultFile, error) {
 	if info.Mode().Perm()&0o077 != 0 {
 		return nil, fmt.Errorf("vault %s has too-open permissions %v; want 0600", path, info.Mode().Perm())
 	}
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(path) // #nosec G304 -- vault path comes solely from operator config (DEADMAN_VAULT_PATH via config.Load); 0600 perms enforced above
 	if err != nil {
 		return nil, err
 	}

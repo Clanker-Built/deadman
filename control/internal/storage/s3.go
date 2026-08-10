@@ -152,7 +152,7 @@ func (c *Client) HeadSHA256(ctx context.Context, key string) ([32]byte, int64, e
 	if err != nil {
 		return h, 0, err
 	}
-	defer func() { _ = body.Close() }()
+	defer body.Close()
 	hasher := newSHA256()
 	n, err := io.Copy(hasher, body)
 	if err != nil {
