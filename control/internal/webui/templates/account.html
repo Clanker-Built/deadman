@@ -32,14 +32,18 @@
     appended at deletion time.
   </p>
   <p class="muted">
-    Requires a recent step-up authentication (within 5 minutes). If
-    yours is stale you'll be redirected to re-confirm first.
+    Requires re-entering your passphrase to confirm it is really you.
+    Passkey-only accounts must have logged in within the last 5 minutes.
   </p>
   <form method="POST" action="/ui/account/delete" class="stacked">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
     <label>
       Type your email (<code>{{.UserEmail}}</code>) to confirm:
       <input type="email" name="confirm_email" autocomplete="off" required>
+    </label>
+    <label>
+      Your passphrase:
+      <input type="password" name="passphrase" autocomplete="current-password">
     </label>
     <button type="submit" class="danger">Delete my account permanently</button>
   </form>

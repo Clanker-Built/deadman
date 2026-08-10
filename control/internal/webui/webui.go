@@ -439,8 +439,28 @@ func MountWithConfig(r chi.Router, logger *slog.Logger, s *store.Store, authSvc 
 	// session-protected group below so they are reachable without a session.
 	// TOTP setup (/ui/auth/totp/setup) must stay INSIDE it — it shows secrets
 	// and requires an authenticated (just-registered or logged-in) user.
-	r.Post("/ui/register", authH.postRegister)
-	r.Post("/ui/login", authH.postLogin)
+	//
+	// Rate limits mirror /api/v1/auth (httpapi.mountAuthRoutes): every
+	// unauthenticated login POST costs a 64 MiB Argon2id verify, so floods
+	// must be shed before the hash runs. Per-IP limits stay generous (Tor
+	// exits share IPs); the per-email limit is the real brute-force defense.
+	ipRegister := ratelimit.New(0.5, 10, 10*time.Minute) // ~1 per 2s, burst 10
+	ipLogin := ratelimit.New(2, 30, 10*time.Minute)      // 2 rps, burst 30
+	emailLogin := ratelimit.New(0.1, 5, 30*time.Minute)  // ~6/hr, burst 5 per email
+	ipLimitKey := func(req *http.Request) string { return "ip:" + ratelimit.ClientIP(req) }
+	emailLimitKey := func(req *http.Request) string {
+		// PostFormValue parses and caches the body, so the handler's own
+		// ParseForm call still sees every field.
+		if e := strings.ToLower(strings.TrimSpace(req.PostFormValue("email"))); e != "" {
+			return "email:" + e
+		}
+		return ""
+	}
+	r.With(ratelimit.Middleware(ipRegister, ipLimitKey)).Post("/ui/register", authH.postRegister)
+	r.With(
+		ratelimit.Middleware(emailLogin, emailLimitKey),
+		ratelimit.Middleware(ipLogin, ipLimitKey),
+	).Post("/ui/login", authH.postLogin)
 	r.Get("/ui/help", func(w http.ResponseWriter, req *http.Request) {
 		// Surface the logged-in email + session if any, so the nav and the
 		// logout form's CSRF token render consistently.
@@ -519,24 +539,41 @@ func MountWithConfig(r chi.Router, logger *slog.Logger, s *store.Store, authSvc 
 		})
 		r.Post("/ui/account/delete", func(w http.ResponseWriter, req *http.Request) {
 			u := userFrom(req.Context())
-			sess := sessionFrom(req.Context())
-			// Require a fresh step-up: deletion is irreversible. If the
-			// session was issued more than 5 minutes ago, send the user
-			// to the reauth page first.
-			if sess == nil || sess.StepUpAt == nil || time.Since(*sess.StepUpAt) > 5*time.Minute {
-				http.Redirect(w, req, "/ui/admin/reauth?next=/ui/account", http.StatusSeeOther)
-				return
+			renderAccountErr := func(msg string) {
+				rend.render(w, req, "account", PageData{
+					Title: "Your account", UserEmail: u.Email,
+					Flash: msg, FlashKind: "error",
+				})
 			}
 			confirm := strings.TrimSpace(req.FormValue("confirm_email"))
 			if confirm != u.Email {
-				rend.render(w, req, "account", PageData{
-					Title: "Your account", UserEmail: u.Email,
-					Flash:     "Email confirmation did not match. No changes made.",
-					FlashKind: "error",
-				})
+				renderAccountErr("Email confirmation did not match. No changes made.")
 				return
 			}
-			err := s.InTx(req.Context(), func(ctx context.Context, q store.Querier) error {
+			// Re-authenticate before the irreversible delete. Users with a
+			// passphrase re-enter it here; legacy passkey-only accounts fall
+			// back to a fresh-login window (sessions record step_up_at at
+			// issue time). The admin reauth page is admin-only and 404s for
+			// normal users, so it must never be the target for this flow.
+			hash, err := store.GetPasswordHash(req.Context(), s.Pool, u.ID)
+			if err != nil {
+				logger.Error("account delete passhash", "err", err)
+				http.Error(w, "delete failed", http.StatusInternalServerError)
+				return
+			}
+			if hash != "" {
+				if auth.VerifyPassword(req.FormValue("passphrase"), hash) != nil {
+					renderAccountErr("Passphrase was incorrect. No changes made.")
+					return
+				}
+			} else {
+				sess := sessionFrom(req.Context())
+				if sess == nil || sess.StepUpAt == nil || time.Since(*sess.StepUpAt) > 5*time.Minute {
+					renderAccountErr("For safety, log out and log back in, then confirm deletion within 5 minutes.")
+					return
+				}
+			}
+			err = s.InTx(req.Context(), func(ctx context.Context, q store.Querier) error {
 				if _, err := authSvc.Ledger().AppendTx(ctx, q, audit.Event{
 					ActorKind:   audit.ActorUser,
 					ActorID:     &u.ID,
