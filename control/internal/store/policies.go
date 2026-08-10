@@ -162,6 +162,28 @@ func GetActivePolicyVersion(ctx context.Context, q Querier, policyID uuid.UUID) 
 	return &v, err
 }
 
+// GetPolicyVersionByID loads a specific policy version by its own ID. The
+// release worker uses this to release exactly the version pinned in the
+// release transaction, not whatever version happens to be active now.
+func GetPolicyVersionByID(ctx context.Context, q Querier, versionID uuid.UUID) (*PolicyVersion, error) {
+	var v PolicyVersion
+	err := q.QueryRow(ctx,
+		`SELECT pv.id, pv.policy_id, pv.version, pv.interval_days, pv.grace_period_hours, pv.hold_period_hours,
+		        pv.warning_schedule, pv.check_in_requirements, pv.release_mode,
+		        pv.destination_ids, pv.content_bundle_ids, pv.effective_at,
+		        pv.user_signature, pv.canonical_hash, pv.created_at
+		 FROM policy_versions pv
+		 WHERE pv.id = $1`, versionID,
+	).Scan(&v.ID, &v.PolicyID, &v.Version, &v.IntervalDays, &v.GracePeriodHours, &v.HoldPeriodHours,
+		&v.WarningSchedule, &v.CheckInRequirements, &v.ReleaseMode,
+		&v.DestinationIDs, &v.ContentBundleIDs, &v.EffectiveAt,
+		&v.UserSignature, &v.CanonicalHash, &v.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return &v, err
+}
+
 // GetPolicyState returns the runtime row, creating it if missing.
 func GetPolicyState(ctx context.Context, q Querier, policyID uuid.UUID) (*PolicyState, error) {
 	var ps PolicyState

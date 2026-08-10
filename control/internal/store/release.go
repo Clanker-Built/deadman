@@ -48,12 +48,20 @@ func CreateOrGetReleaseTransaction(ctx context.Context, q Querier, policyID, ver
 }
 
 // FindPendingReleases returns release transactions that still need work.
+//
+// The join on policies.state = 'releasing' is a safety gate: a policy that was
+// revoked or suspended after triggering must never have its release advanced,
+// even if the atomic cancel in the revoke path was somehow missed. Both
+// conditions are required — the release row must be unfinished AND the policy
+// must still be in the releasing state.
 func FindPendingReleases(ctx context.Context, q Querier, limit int) ([]ReleaseTransaction, error) {
 	rows, err := q.Query(ctx,
-		`SELECT id, policy_id, policy_version_id, epoch, state, started_at, completed_at, manifest, service_signature
-		 FROM release_transactions
-		 WHERE state IN ('pending','unsealing','packaging','publishing')
-		 ORDER BY started_at ASC LIMIT $1 FOR UPDATE SKIP LOCKED`, limit)
+		`SELECT rt.id, rt.policy_id, rt.policy_version_id, rt.epoch, rt.state, rt.started_at, rt.completed_at, rt.manifest, rt.service_signature
+		 FROM release_transactions rt
+		 JOIN policies p ON p.id = rt.policy_id
+		 WHERE rt.state IN ('pending','unsealing','packaging','publishing')
+		   AND p.state = 'releasing'
+		 ORDER BY rt.started_at ASC LIMIT $1 FOR UPDATE OF rt SKIP LOCKED`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -73,6 +81,23 @@ func FindPendingReleases(ctx context.Context, q Querier, limit int) ([]ReleaseTr
 func UpdateReleaseState(ctx context.Context, q Querier, id uuid.UUID, newState string) error {
 	_, err := q.Exec(ctx, `UPDATE release_transactions SET state = $1 WHERE id = $2`, newState, id)
 	return err
+}
+
+// CancelOpenReleasesForPolicy marks every not-yet-finished release transaction
+// for a policy as 'canceled'. Called in the same transaction as a revoke or
+// suspend so the cancellation is atomic with the policy state change: a
+// release that has not yet published is stopped before it can. Returns the
+// number of rows canceled. Rows already in a terminal state are untouched.
+func CancelOpenReleasesForPolicy(ctx context.Context, q Querier, policyID uuid.UUID) (int64, error) {
+	tag, err := q.Exec(ctx,
+		`UPDATE release_transactions
+		   SET state = 'canceled', completed_at = now()
+		 WHERE policy_id = $1
+		   AND state IN ('pending','unsealing','packaging','publishing')`, policyID)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }
 
 // FinishRelease sets the manifest + signature and marks completed.

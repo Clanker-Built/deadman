@@ -332,6 +332,35 @@ func (s *Service) apply(ctx context.Context, userID, policyID uuid.UUID, ev stat
 			return err
 		}
 
+		// Revoking or suspending a policy that has already triggered must stop
+		// any in-flight release atomically with the state change, or a stalled
+		// release (e.g. keyvault locked) would still fire when it resumes and
+		// publish content the user explicitly recalled. Safe no-op when there
+		// is no open release.
+		if ev.Kind == state.EventRevoke || ev.Kind == state.EventSuspend {
+			n, err := store.CancelOpenReleasesForPolicy(ctx, q, policyID)
+			if err != nil {
+				return err
+			}
+			if n > 0 {
+				var cancelActor *uuid.UUID
+				if userID != uuid.Nil {
+					uid := userID
+					cancelActor = &uid
+				}
+				if _, err := s.Ledger.AppendTx(ctx, q, audit.Event{
+					ActorKind:   audit.ActorUser,
+					ActorID:     cancelActor,
+					EventType:   "release.canceled",
+					SubjectKind: "policy",
+					SubjectID:   &policyID,
+					Payload:     map[string]any{"reason": string(ev.Kind), "canceled_count": n},
+				}); err != nil {
+					return err
+				}
+			}
+		}
+
 		// Audit.
 		actor := audit.ActorUser
 		var actorID *uuid.UUID

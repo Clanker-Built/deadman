@@ -150,8 +150,9 @@ func (w *Worker) runOne(ctx context.Context, rt store.ReleaseTransaction) error 
 	log := w.Logger.With("release_id", rt.ID, "policy_id", rt.PolicyID)
 	log.Info("release: starting", "state", rt.State)
 
-	// Load the policy version + its bundle/destination IDs.
-	pv, err := store.GetActivePolicyVersion(ctx, w.Store.Pool, rt.PolicyID)
+	// Load the exact policy version pinned in the release transaction — not
+	// the currently-active version, which may have advanced after the trigger.
+	pv, err := store.GetPolicyVersionByID(ctx, w.Store.Pool, rt.PolicyVersionID)
 	if err != nil {
 		return fmt.Errorf("load policy version: %w", err)
 	}
@@ -177,6 +178,22 @@ func (w *Worker) runOne(ctx context.Context, rt store.ReleaseTransaction) error 
 	_ = store.UpdateReleaseState(ctx, w.Store.Pool, rt.ID, "packaging")
 	slug := releaseSlug(rt.ID)
 	manifest, landing := w.packageRelease(rt, *pv, payloads, bundleMeta, slug)
+
+	// Last-chance recall check before anything leaves the server. If the owner
+	// revoked or suspended the policy while this release was stalled or
+	// in-flight, the policy is no longer 'releasing' and its open release rows
+	// were canceled in the same transaction — abort rather than publish. This
+	// backstops FindPendingReleases' state filter; unsealing/packaging above
+	// only touch worker memory, so stopping here leaks nothing.
+	pol, err := store.GetPolicy(ctx, w.Store.Pool, rt.PolicyID)
+	if err != nil {
+		return fmt.Errorf("recall check: %w", err)
+	}
+	if pol.State != string(state.Releasing) {
+		_ = store.UpdateReleaseState(ctx, w.Store.Pool, rt.ID, "canceled")
+		log.Warn("release: aborted before publish; policy no longer releasing", "policy_state", pol.State)
+		return nil
+	}
 
 	// Publish.
 	_ = store.UpdateReleaseState(ctx, w.Store.Pool, rt.ID, "publishing")
