@@ -286,7 +286,11 @@ func tick(p Policy, rt Runtime, now time.Time) Result {
 		}
 	case Warning:
 		if rt.NextDueAt != nil && !now.Before(*rt.NextDueAt) {
-			grace := rt.NextDueAt.Add(time.Duration(p.GracePeriodHours) * time.Hour)
+			// Anchor grace at the transition time, not the original due time:
+			// after a control-server outage longer than the grace period the
+			// user still gets a full grace window after restart instead of an
+			// immediate trigger. Matches the Hold→Grace anchoring below.
+			grace := now.Add(time.Duration(p.GracePeriodHours) * time.Hour)
 			out.Runtime.State = Grace
 			out.Runtime.GraceExpiresAt = &grace
 			out.Changed = true

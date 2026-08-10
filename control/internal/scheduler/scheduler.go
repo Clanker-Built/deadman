@@ -2,9 +2,14 @@
 // a tick, selects armed policies whose deadlines may have passed, and runs
 // the state-machine Tick event for each.
 //
-// Concurrency: selection uses FOR UPDATE SKIP LOCKED so multiple schedulers
-// can run safely (M4 horizontal scaling). Each policy's transition is
-// serializable-isolated by policy.Service.
+// Concurrency: FOR UPDATE SKIP LOCKED keeps concurrent schedulers (M4
+// horizontal scaling) from selecting the same rows while their selection
+// transactions overlap, but the row locks are released when selectDue's tx
+// commits — before evaluation. The actual double-evaluation guard is the
+// policy_states.epoch CAS inside policy.Service: a losing evaluator's
+// transaction fails with ErrConcurrentUpdate and rolls back (audit event
+// included), so duplicate evaluation wastes work but can never double-apply
+// a transition, and the release worker keys off committed 'triggered' state.
 //
 // Determinism: the clock is injected so integration tests can compress a
 // 14-day lifecycle into milliseconds.
@@ -99,7 +104,9 @@ func (s *Scheduler) Tick(ctx context.Context) error {
 }
 
 func (s *Scheduler) selectDue(ctx context.Context) ([]uuid.UUID, error) {
-	// The FOR UPDATE lock must live inside a tx.
+	// The FOR UPDATE lock must live inside a tx. The locks are released when
+	// this tx commits — before the caller evaluates the returned IDs — so the
+	// epoch CAS in policy.Service, not this lock, prevents double-transitions.
 	var ids []uuid.UUID
 	err := s.store.InTx(ctx, func(ctx context.Context, q store.Querier) error {
 		var e error
