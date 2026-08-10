@@ -444,9 +444,9 @@ func MountWithConfig(r chi.Router, logger *slog.Logger, s *store.Store, authSvc 
 	// unauthenticated login POST costs a 64 MiB Argon2id verify, so floods
 	// must be shed before the hash runs. Per-IP limits stay generous (Tor
 	// exits share IPs); the per-email limit is the real brute-force defense.
-	ipRegister := ratelimit.New(0.5, 10, 10*time.Minute) // ~1 per 2s, burst 10
-	ipLogin := ratelimit.New(2, 30, 10*time.Minute)      // 2 rps, burst 30
-	emailLogin := ratelimit.New(0.1, 5, 30*time.Minute)  // ~6/hr, burst 5 per email
+	ipRegister := ratelimit.New(0.5, 10, 10*time.Minute)     // ~1 per 2s, burst 10
+	ipLogin := ratelimit.New(2, 30, 10*time.Minute)          // 2 rps, burst 30
+	emailLogin := ratelimit.New(6.0/3600, 5, 30*time.Minute) // ~6/hr, burst 5 per email
 	ipLimitKey := func(req *http.Request) string { return "ip:" + ratelimit.ClientIP(req) }
 	emailLimitKey := func(req *http.Request) string {
 		// PostFormValue parses and caches the body, so the handler's own

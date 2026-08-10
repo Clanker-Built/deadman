@@ -171,7 +171,7 @@ func (w *Worker) runOne(ctx context.Context, rt store.ReleaseTransaction) error 
 		return fmt.Errorf("recall check: %w", err)
 	}
 	if pol.State != string(state.Releasing) {
-		_ = store.UpdateReleaseState(ctx, w.Store.Pool, rt.ID, "canceled")
+		_, _ = store.UpdateReleaseState(ctx, w.Store.Pool, rt.ID, "canceled")
 		log.Warn("release: aborted; policy no longer releasing", "policy_state", pol.State)
 		return nil
 	}
@@ -196,7 +196,11 @@ func (w *Worker) runOne(ctx context.Context, rt store.ReleaseTransaction) error 
 	for _, did := range pv.DestinationIDs {
 		d, err := store.GetDestination(ctx, w.Store.Pool, did)
 		if err != nil {
-			continue // handled per-attempt in the delivery loop below
+			// A transient load error must not silently drop the destination:
+			// it would never reach the delivery loop (which iterates the owned
+			// list) and the release would finalize without contacting it.
+			// Fail the run so the next tick retries with a fresh read.
+			return fmt.Errorf("load destination %s: %w", did, err)
 		}
 		if d.UserID != pol.UserID {
 			log.Error("release: skipping destination not owned by policy owner", "destination_id", did, "dest_owner", d.UserID)
@@ -206,7 +210,12 @@ func (w *Worker) runOne(ctx context.Context, rt store.ReleaseTransaction) error 
 	}
 
 	// Unseal owned bundles into memory.
-	_ = store.UpdateReleaseState(ctx, w.Store.Pool, rt.ID, "unsealing")
+	if ok, err := store.UpdateReleaseState(ctx, w.Store.Pool, rt.ID, "unsealing"); err != nil {
+		return fmt.Errorf("mark unsealing: %w", err)
+	} else if !ok {
+		log.Warn("release: aborted; row canceled or finalized before unseal")
+		return nil
+	}
 	payloads := make(map[uuid.UUID][]byte, len(ownedBundles))
 	bundleMeta := make(map[uuid.UUID]store.ContentBundle, len(ownedBundles))
 	for _, b := range ownedBundles {
@@ -219,12 +228,22 @@ func (w *Worker) runOne(ctx context.Context, rt store.ReleaseTransaction) error 
 	}
 
 	// Package.
-	_ = store.UpdateReleaseState(ctx, w.Store.Pool, rt.ID, "packaging")
+	if _, err := store.UpdateReleaseState(ctx, w.Store.Pool, rt.ID, "packaging"); err != nil {
+		return fmt.Errorf("mark packaging: %w", err)
+	}
 	slug := releaseSlug(rt.ID)
 	manifest, landing := w.packageRelease(rt, *pv, payloads, bundleMeta, slug)
 
-	// Publish (idempotent: re-running overwrites the same object keys).
-	_ = store.UpdateReleaseState(ctx, w.Store.Pool, rt.ID, "publishing")
+	// Point of no return: claim the 'publishing' state with the same active-only
+	// guard the cancel path uses. If a revoke/suspend committed since the recall
+	// check, the row is already 'canceled' and this claim reports no rows — abort
+	// before anything leaves the server. Nothing was delivered yet.
+	if ok, err := store.UpdateReleaseState(ctx, w.Store.Pool, rt.ID, "publishing"); err != nil {
+		return fmt.Errorf("mark publishing: %w", err)
+	} else if !ok {
+		log.Warn("release: aborted at publish gate; policy was recalled")
+		return nil
+	}
 	publicURL, err := w.publish(ctx, slug, payloads, bundleMeta, manifest, landing)
 	if err != nil {
 		// Stays in 'publishing' with the policy still 'releasing', so the next
@@ -237,11 +256,29 @@ func (w *Worker) runOne(ctx context.Context, rt store.ReleaseTransaction) error 
 	// a bounded cap instead of failing permanently on one transient error.
 	allOK := true
 	retryable := false
+	// defer marks a destination undetermined for this tick without recording an
+	// attempt, so a transient DB error on the idempotency/counter query neither
+	// re-delivers nor corrupts attempt numbering — the next tick retries it.
+	deferDest := func() {
+		allOK = false
+		retryable = true
+	}
 	for _, did := range ownedDestIDs {
-		if done, err := store.DestinationDelivered(ctx, w.Store.Pool, rt.ID, did); err == nil && done {
+		done, err := store.DestinationDelivered(ctx, w.Store.Pool, rt.ID, did)
+		if err != nil {
+			log.Warn("release: delivered-check errored, deferring destination", "destination_id", did, "err", err)
+			deferDest()
 			continue
 		}
-		attempts, _ := store.CountDestinationAttempts(ctx, w.Store.Pool, rt.ID, did)
+		if done {
+			continue
+		}
+		attempts, err := store.CountDestinationAttempts(ctx, w.Store.Pool, rt.ID, did)
+		if err != nil {
+			log.Warn("release: attempt-count errored, deferring destination", "destination_id", did, "err", err)
+			deferDest()
+			continue
+		}
 		attempt := attempts + 1
 		fail := func(reason string) {
 			_ = store.RecordDestinationAttempt(ctx, w.Store.Pool, rt.ID, did, attempt, "failed", reason)
@@ -268,7 +305,9 @@ func (w *Worker) runOne(ctx context.Context, rt store.ReleaseTransaction) error 
 	// finalize — finalizing would move the policy out of 'releasing' and
 	// FindPendingReleases would never pick it up again.
 	if !allOK && retryable {
-		_ = store.UpdateReleaseState(ctx, w.Store.Pool, rt.ID, "publishing")
+		if _, err := store.UpdateReleaseState(ctx, w.Store.Pool, rt.ID, "publishing"); err != nil {
+			return fmt.Errorf("mark retry: %w", err)
+		}
 		log.Warn("release: partial delivery, will retry next tick")
 		return nil
 	}
@@ -280,8 +319,15 @@ func (w *Worker) runOne(ctx context.Context, rt store.ReleaseTransaction) error 
 	if !allOK {
 		finalState = "failed_partial"
 	}
-	if err := store.FinishRelease(ctx, w.Store.Pool, rt.ID, finalState, manifestJSON, sig); err != nil {
+	// Guarded finalize: if a revoke canceled the release during delivery, this
+	// reports no rows and we must not advance the (now revoked) policy.
+	finalized, err := store.FinishRelease(ctx, w.Store.Pool, rt.ID, finalState, manifestJSON, sig)
+	if err != nil {
 		return err
+	}
+	if !finalized {
+		log.Warn("release: not finalized; row was canceled during delivery")
+		return nil
 	}
 
 	// Advance state machine.

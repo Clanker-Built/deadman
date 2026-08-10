@@ -16,9 +16,9 @@ import (
 func mountAuthRoutes(r chi.Router, logger *slog.Logger, svc *auth.Service) {
 	// Generous per-IP limits because Tor exits share IPs. Strict per-email
 	// limits catch targeted brute-forcing against a specific account.
-	ipRegister := ratelimit.New(0.5, 10, 10*time.Minute) // ~1 per 2s, burst 10
-	ipLogin := ratelimit.New(2, 30, 10*time.Minute)      // 2 rps, burst 30
-	emailLogin := ratelimit.New(0.1, 5, 30*time.Minute)  // ~6/hr, burst 5 per email
+	ipRegister := ratelimit.New(0.5, 10, 10*time.Minute)     // ~1 per 2s, burst 10
+	ipLogin := ratelimit.New(2, 30, 10*time.Minute)          // 2 rps, burst 30
+	emailLogin := ratelimit.New(6.0/3600, 5, 30*time.Minute) // ~6/hr, burst 5 per email
 
 	ipKey := func(r *http.Request) string { return "ip:" + ratelimit.ClientIP(r) }
 	emailKey := func(r *http.Request) string {

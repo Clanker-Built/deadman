@@ -80,7 +80,7 @@ func VerifyPassword(passphrase, encoded string) error {
 	if p < 1 || p > 255 {
 		return fmt.Errorf("auth: bad parallelism %d", p)
 	}
-	if t < 1 {
+	if t < 1 || t > 64 {
 		return fmt.Errorf("auth: bad iterations %d", t)
 	}
 	if mem < 8 || mem > 1<<20 {

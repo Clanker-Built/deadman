@@ -77,10 +77,23 @@ func FindPendingReleases(ctx context.Context, q Querier, limit int) ([]ReleaseTr
 	return out, rows.Err()
 }
 
-// UpdateReleaseState advances a release transaction to a new state.
-func UpdateReleaseState(ctx context.Context, q Querier, id uuid.UUID, newState string) error {
-	_, err := q.Exec(ctx, `UPDATE release_transactions SET state = $1 WHERE id = $2`, newState, id)
-	return err
+// activeReleaseStates are the non-terminal states a release advances through.
+// Guarding writes on these lets a concurrent cancel (which sets 'canceled')
+// win by exclusion: once canceled/finalized, the worker's advances no-op.
+const activeReleaseStates = `('pending','unsealing','packaging','publishing')`
+
+// UpdateReleaseState advances a release transaction to a new state, but only
+// while it is still in an active (non-terminal) state. Returns false with no
+// error if the row was canceled or finalized underneath the caller — the
+// caller must then stop, since a cancel has won the race.
+func UpdateReleaseState(ctx context.Context, q Querier, id uuid.UUID, newState string) (bool, error) {
+	tag, err := q.Exec(ctx,
+		`UPDATE release_transactions SET state = $1
+		 WHERE id = $2 AND state IN `+activeReleaseStates, newState, id)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
 }
 
 // CancelOpenReleasesForPolicy marks every not-yet-finished release transaction
@@ -100,13 +113,19 @@ func CancelOpenReleasesForPolicy(ctx context.Context, q Querier, policyID uuid.U
 	return tag.RowsAffected(), nil
 }
 
-// FinishRelease sets the manifest + signature and marks completed.
-func FinishRelease(ctx context.Context, q Querier, id uuid.UUID, newState string, manifest json.RawMessage, sig []byte) error {
-	_, err := q.Exec(ctx,
+// FinishRelease sets the manifest + signature and marks the release terminal,
+// but only from an active state. Returns false with no error if the release
+// was canceled underneath the caller, so a revoke that landed during delivery
+// is not overwritten by a 'completed' write.
+func FinishRelease(ctx context.Context, q Querier, id uuid.UUID, newState string, manifest json.RawMessage, sig []byte) (bool, error) {
+	tag, err := q.Exec(ctx,
 		`UPDATE release_transactions
 		   SET state = $1, manifest = $2, service_signature = $3, completed_at = now()
-		 WHERE id = $4`, newState, manifest, sig, id)
-	return err
+		 WHERE id = $4 AND state IN `+activeReleaseStates, newState, manifest, sig, id)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
 }
 
 // DestinationDelivered reports whether a destination already has a successful

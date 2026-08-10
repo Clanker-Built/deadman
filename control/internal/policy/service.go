@@ -257,7 +257,25 @@ func (s *Service) ForceTriggerDev(ctx context.Context, userID, policyID uuid.UUI
 		if err != nil {
 			return err
 		}
-		_, err = q.Exec(ctx, `UPDATE policies SET state = 'grace', updated_at = now() WHERE id = $1`, policyID)
+		if _, err = q.Exec(ctx, `UPDATE policies SET state = 'grace', updated_at = now() WHERE id = $1`, policyID); err != nil {
+			return err
+		}
+		// Audit the forced transition in the same tx, like every other
+		// state-mutating path, so the ledger never shows an uncaused
+		// grace → triggered later. Distinct event type flags it as operator-forced.
+		var actorID *uuid.UUID
+		if userID != uuid.Nil {
+			uid := userID
+			actorID = &uid
+		}
+		_, err = s.Ledger.AppendTx(ctx, q, audit.Event{
+			ActorKind:   audit.ActorUser,
+			ActorID:     actorID,
+			EventType:   "policy.force_triggered_dev",
+			SubjectKind: "policy",
+			SubjectID:   &policyID,
+			Payload:     map[string]any{"from": p.State, "to": "grace", "reason": "dev_force"},
+		})
 		return err
 	})
 }
