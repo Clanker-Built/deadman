@@ -69,8 +69,8 @@
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <button type="submit" class="btn primary">Arm policy</button>
       </form>
-      <p class="muted">Arming applies a 24-hour activation cooldown before
-      the timer begins. You can cancel during that window.</p>
+      <p class="muted">Arming starts the check-in countdown immediately. You
+      can suspend or revoke at any time before the policy triggers.</p>
     {{else if or (eq .Policy.State "healthy") (eq .Policy.State "warning") (eq .Policy.State "grace") (eq .Policy.State "hold")}}
       <form method="POST" action="/ui/policies/{{.Policy.ID}}/suspend" class="inline">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
