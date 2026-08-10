@@ -1,6 +1,7 @@
 package release_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -67,9 +69,18 @@ func TestReleaseRetriesFailedDelivery(t *testing.T) {
 	clk := &fakeClock{t: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)}
 	polSvc := policy.New(s, ledger, clk)
 
-	// Webhook fails (500) on the first hit, succeeds (204) afterward.
+	// Webhook fails (500) on the first hit, succeeds (204) afterward, and
+	// records each body so we can assert the manifest is byte-identical across
+	// the retry (a fresh timestamp or reordered bundles would break signed
+	// release evidence for recipients delivered on different ticks).
 	var hits int32
+	var bodyMu sync.Mutex
+	var bodies [][]byte
 	wh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		bodyMu.Lock()
+		bodies = append(bodies, b)
+		bodyMu.Unlock()
 		if atomic.AddInt32(&hits, 1) == 1 {
 			w.WriteHeader(500)
 			return
@@ -169,6 +180,13 @@ func TestReleaseRetriesFailedDelivery(t *testing.T) {
 	// Exactly two webhook hits total (one failed, one ok); no double-delivery.
 	if n := atomic.LoadInt32(&hits); n != 2 {
 		t.Fatalf("webhook hits = %d, want 2 (1 fail + 1 success)", n)
+	}
+	// The manifest delivered on the retry must be byte-identical to the first
+	// attempt's — deterministic across ticks.
+	bodyMu.Lock()
+	defer bodyMu.Unlock()
+	if len(bodies) == 2 && !bytes.Equal(bodies[0], bodies[1]) {
+		t.Fatalf("retry manifest differs from first attempt:\n first: %s\n retry: %s", bodies[0], bodies[1])
 	}
 	// The landing page and bundle are published and readable.
 	rid := findReleaseID(ctx, t, s, p.ID)

@@ -24,11 +24,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -288,8 +290,20 @@ func (w *Worker) runOne(ctx context.Context, rt store.ReleaseTransaction) error 
 			}
 		}
 		d, err := store.GetDestination(ctx, w.Store.Pool, did)
-		if err != nil || d.RevokedAt != nil {
-			fail("destination revoked or missing")
+		if err != nil {
+			// Only a genuinely-absent row is a permanent failure. A transient
+			// load error must not burn a retry attempt (matching the two
+			// queries above), so defer it to the next tick.
+			if errors.Is(err, store.ErrNotFound) {
+				fail("destination missing")
+			} else {
+				log.Warn("release: destination load errored, deferring", "destination_id", did, "err", err)
+				deferDest()
+			}
+			continue
+		}
+		if d.RevokedAt != nil {
+			fail("destination revoked")
 			continue
 		}
 		if err := w.deliver(ctx, d, publicURL, manifest); err != nil {
@@ -413,11 +427,16 @@ type manifestBundle struct {
 
 func (w *Worker) packageRelease(rt store.ReleaseTransaction, pv store.PolicyVersion, payloads map[uuid.UUID][]byte, meta map[uuid.UUID]store.ContentBundle, slug string) (manifestT, []byte) {
 	m := manifestT{
-		ReleaseID:     rt.ID,
-		PolicyID:      rt.PolicyID,
-		VersionID:     pv.ID,
-		Epoch:         rt.Epoch,
-		ReleasedAt:    time.Now().UTC().Truncate(time.Second),
+		ReleaseID: rt.ID,
+		PolicyID:  rt.PolicyID,
+		VersionID: pv.ID,
+		Epoch:     rt.Epoch,
+		// Anchor to the release row's creation time, not time.Now(): retries
+		// re-run this function, and a fresh timestamp (or the randomized map
+		// order below) would produce a different signed manifest each tick, so
+		// recipients delivered on different ticks would disagree with the
+		// public manifest.sig for the same release_id.
+		ReleasedAt:    rt.StartedAt.UTC().Truncate(time.Second),
 		ReleaseMode:   pv.ReleaseMode,
 		ServicePubKey: base64URLNoPad(w.ServicePub),
 	}
@@ -431,6 +450,8 @@ func (w *Worker) packageRelease(rt store.ReleaseTransaction, pv store.PolicyVers
 			Filename:  bid.String() + ".bin",
 		})
 	}
+	// Stable order so the marshaled manifest is byte-identical across retries.
+	sort.Slice(m.Bundles, func(i, j int) bool { return m.Bundles[i].ID.String() < m.Bundles[j].ID.String() })
 	landing := renderLanding(slug, m)
 	return m, landing
 }

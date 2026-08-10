@@ -143,13 +143,19 @@ func (h *authHandlers) postRegister(w http.ResponseWriter, req *http.Request) {
 		if e := store.SetPasswordHash(ctx, q, u.ID, hash); e != nil {
 			return e
 		}
-		_, e = h.auth.Ledger().AppendTx(ctx, q, audit.Event{
+		if _, e = h.auth.Ledger().AppendTx(ctx, q, audit.Event{
 			ActorKind: audit.ActorUser,
 			ActorID:   &u.ID,
 			EventType: "user.created",
 			Payload:   map[string]any{"email": email, "method": "passphrase"},
-		})
-		return e
+		}); e != nil {
+			return e
+		}
+		// Registration auto-logs the user in, so the bootstrap-admin promotion
+		// must run here too — otherwise the designated admin registers via the
+		// documented flow and lands without admin access until they log out and
+		// back in.
+		return h.promoteIfBootstrap(ctx, q, u)
 	})
 	if err != nil {
 		h.logger.Error("create user", "err", err)
@@ -168,6 +174,38 @@ func (h *authHandlers) postRegister(w http.ResponseWriter, req *http.Request) {
 	}
 	auth.SetSessionCookie(w, tok, req.TLS != nil)
 	http.Redirect(w, req, "/ui/auth/totp/setup", http.StatusSeeOther)
+}
+
+// promoteIfBootstrap grants admin to the very first user whose email matches
+// DEADMAN_BOOTSTRAP_ADMIN_EMAIL while no admin exists yet, auditing the
+// promotion. Called from both the register (auto-login) and login paths so the
+// designated admin is promoted whichever one they reach first. Runs inside the
+// caller's transaction. No-op when unconfigured, already admin, or an admin
+// already exists.
+func (h *authHandlers) promoteIfBootstrap(ctx context.Context, q store.Querier, u *store.User) error {
+	if h.bootstrapAdminEmail == "" || u.IsAdmin || !strings.EqualFold(u.Email, h.bootstrapAdminEmail) {
+		return nil
+	}
+	n, err := store.CountAdmins(ctx, q)
+	if err != nil {
+		return err
+	}
+	if n != 0 {
+		return nil
+	}
+	if err := store.SetUserAdmin(ctx, q, u.ID, true); err != nil {
+		return err
+	}
+	if _, err := h.auth.Ledger().AppendTx(ctx, q, audit.Event{
+		ActorKind: audit.ActorSystem, EventType: "admin.promoted",
+		SubjectKind: "user", SubjectID: &u.ID,
+		Payload: map[string]any{"reason": "bootstrap", "email": u.Email},
+	}); err != nil {
+		return err
+	}
+	h.logger.Warn("BOOTSTRAP ADMIN promotion fired — clear DEADMAN_BOOTSTRAP_ADMIN_EMAIL from /etc/deadman/deadman.env and restart the service",
+		"user_id", u.ID, "email", u.Email)
+	return nil
 }
 
 func (h *authHandlers) renderRegisterErr(w http.ResponseWriter, req *http.Request, msg string) {
@@ -372,28 +410,7 @@ func (h *authHandlers) postLogin(w http.ResponseWriter, req *http.Request) {
 		}); err != nil {
 			return err
 		}
-		if h.bootstrapAdminEmail != "" && !u.IsAdmin &&
-			strings.EqualFold(u.Email, h.bootstrapAdminEmail) {
-			n, err := store.CountAdmins(ctx, q)
-			if err != nil {
-				return err
-			}
-			if n == 0 {
-				if err := store.SetUserAdmin(ctx, q, u.ID, true); err != nil {
-					return err
-				}
-				if _, err := h.auth.Ledger().AppendTx(ctx, q, audit.Event{
-					ActorKind: audit.ActorSystem, EventType: "admin.promoted",
-					SubjectKind: "user", SubjectID: &u.ID,
-					Payload: map[string]any{"reason": "bootstrap", "email": u.Email},
-				}); err != nil {
-					return err
-				}
-				h.logger.Warn("BOOTSTRAP ADMIN promotion fired — clear DEADMAN_BOOTSTRAP_ADMIN_EMAIL from /etc/deadman/deadman.env and restart the service",
-					"user_id", u.ID, "email", u.Email)
-			}
-		}
-		return nil
+		return h.promoteIfBootstrap(ctx, q, u)
 	})
 
 	if confirmed == nil {

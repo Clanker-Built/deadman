@@ -454,7 +454,10 @@ func MountWithConfig(r chi.Router, logger *slog.Logger, s *store.Store, authSvc 
 		if e := strings.ToLower(strings.TrimSpace(req.PostFormValue("email"))); e != "" {
 			return "email:" + e
 		}
-		return ""
+		// A missing/blank email must still hit a strict bucket — an empty key
+		// disables the limiter, which would let an attacker omit the field to
+		// bypass the per-email limit and flood the dummy Argon2 verify.
+		return "email:__missing__"
 	}
 	r.With(ratelimit.Middleware(ipRegister, ipLimitKey)).Post("/ui/register", authH.postRegister)
 	r.With(

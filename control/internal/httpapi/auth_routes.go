@@ -28,7 +28,10 @@ func mountAuthRoutes(r chi.Router, logger *slog.Logger, svc *auth.Service) {
 		if e := r.URL.Query().Get("email"); e != "" {
 			return "email:" + e
 		}
-		return ""
+		// A blank key disables the limiter; route missing-email requests to a
+		// single strict bucket so the per-email limit can't be bypassed by
+		// omitting the field.
+		return "email:__missing__"
 	}
 
 	limitRegisterBegin := ratelimit.Middleware(ipRegister, ipKey)
