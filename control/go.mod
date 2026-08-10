@@ -2,7 +2,7 @@ module github.com/gcottrell/deadman/control
 
 go 1.25.0
 
-toolchain go1.25.9
+toolchain go1.25.12
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.41.6
@@ -15,6 +15,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.2
 	golang.org/x/crypto v0.50.0
+	golang.org/x/time v0.15.0
 )
 
 require (
@@ -43,8 +44,7 @@ require (
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
-	golang.org/x/sync v0.20.0 // indirect
+	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/sys v0.43.0 // indirect
-	golang.org/x/text v0.36.0 // indirect
-	golang.org/x/time v0.15.0 // indirect
+	golang.org/x/text v0.39.0 // indirect
 )
