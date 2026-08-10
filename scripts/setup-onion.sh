@@ -21,7 +21,8 @@
 #  12. Write /etc/deadman/deadman.env (mode 0600, owned by deadman).
 #  13. Install systemd unit + logrotate config.
 #  14. Start the deadman-control service and capture the offline recovery
-#      share (share 3), printed once at first vault generation.
+#      share (share 3), then verify the service is healthy (active +
+#      answering on the loopback port).
 #  15. Print a final report with the .onion URL and a Day-1 checklist.
 #
 # Idempotent in the safe sense: re-running with the same settings on the
@@ -613,7 +614,7 @@ write_env_file() {
 # Mode 0600, owned by ${DEADMAN_USER}:${DEADMAN_USER}.
 # Edits here take effect on the next "systemctl restart deadman-control".
 
-DEADMAN_ENV=prod
+DEADMAN_ENV=production
 DEADMAN_LISTEN_ADDR=127.0.0.1:${LISTEN_PORT}
 
 DEADMAN_DATABASE_URL=postgres://${PG_USER}:${PG_PASS}@127.0.0.1:5432/${PG_DB}?sslmode=disable
@@ -679,10 +680,13 @@ start_service_and_capture_share3() {
   local share3=""
   while (( tries < 60 )); do
     if grep -q "DEADMAN THRESHOLD VAULT CREATED" "$LOG_DIR/server.log" 2>/dev/null; then
-      # Share 3 is the line directly after "Offline recovery share..." — but
-      # for robustness we extract it via a simple awk that grabs the first
-      # word-only line between the banner and the closing rule.
-      share3="$(awk '/DEADMAN THRESHOLD VAULT CREATED/{flag=1; next} /^==========/{flag=0} flag && /^[[:space:]]*[A-Za-z0-9.-]+[[:space:]]*$/ {print; exit}' "$LOG_DIR/server.log" | tr -d '[:space:]')"
+      # Share 3 is the single hyphen-grouped hex token printed inside the
+      # banner. Match the first single-field line that contains an
+      # alphanumeric and is NOT a rule of only dashes/equals — the previous
+      # matcher grabbed the "----" separator line (dashes are alphanumerics'
+      # neighbours in its character class), handing the operator a row of
+      # dashes instead of their recovery share.
+      share3="$(awk '/DEADMAN THRESHOLD VAULT CREATED/{flag=1; next} /^==========/{flag=0} flag && NF==1 && $1 ~ /[A-Za-z0-9]/ && $1 !~ /^[-=]+$/ {print $1; exit}' "$LOG_DIR/server.log" | tr -d '[:space:]')"
       if [[ -n "$share3" ]]; then break; fi
     fi
     if grep -q "vault unlocked via env passphrases" "$LOG_DIR/server.log" 2>/dev/null \
@@ -701,6 +705,31 @@ start_service_and_capture_share3() {
     OFFLINE_SHARE3="$share3"
     ok "Captured."
   fi
+}
+
+# verify_service_healthy confirms the service actually came up and is
+# answering, instead of reporting success on a crash-looping unit. A bad
+# config, an unreachable database, or a failed migration all surface here.
+verify_service_healthy() {
+  step "Verifying the service is healthy"
+  local tries=0
+  while (( tries < 30 )); do
+    if systemctl is-active --quiet deadman-control \
+       && curl -fsS -o /dev/null --max-time 3 "http://127.0.0.1:${LISTEN_PORT}/ui/" 2>/dev/null; then
+      ok "deadman-control is active and answering on 127.0.0.1:${LISTEN_PORT}."
+      return
+    fi
+    tries=$((tries+1))
+    sleep 1
+  done
+  warn "deadman-control did not become healthy within 30s."
+  echo
+  echo "  Last 40 lines of ${LOG_DIR}/server.log:"
+  tail -n 40 "$LOG_DIR/server.log" 2>/dev/null || true
+  echo
+  echo "  systemctl status:"
+  systemctl --no-pager status deadman-control 2>&1 | head -n 20 || true
+  fail "Service failed its health check (see above). Common causes: database not reachable, a bad value in ${ENV_FILE}, or a migration that did not apply. Fix and re-run, or inspect 'journalctl -u deadman-control'."
 }
 
 # -------------------------------------------------------------------------
@@ -741,23 +770,28 @@ EOF
   ${C_BLD}What to do tomorrow morning${C_RST}
 
   1. Open ${C_BLD}http://${ONION_HOST}${C_RST} in Tor Browser.
-  2. Register an account with the email ${ADMIN_EMAIL} and a passkey.
-     Bitwarden, 1Password, your platform passkey manager all work over
-     a v3 onion (it counts as a "secure context").
-  3. After login, the top nav shows an Admin link — that confirms the
-     bootstrap promotion worked. Visit ${C_BLD}/ui/admin/${C_RST} for the panel.
-  4. After your first successful login, edit ${C_BLD}${ENV_FILE}${C_RST} and
+  2. Register an account with the email ${ADMIN_EMAIL}. On a plain-HTTP
+     onion the auth path is ${C_BLD}passphrase + TOTP${C_RST} (not a passkey —
+     Tor Browser disables WebAuthn on onion origins). Choose a 12+ char
+     passphrase, then add the shown setup key to an authenticator app
+     (Aegis, Raivo, KeePassXC, 1Password, etc.) and confirm a code.
+  3. ${C_BLD}Save the ten recovery codes${C_RST} shown once during setup — they are
+     the only way back in if you lose your authenticator.
+  4. Registration auto-promotes ${ADMIN_EMAIL} to admin (it matches the
+     bootstrap email), so the top nav shows an ${C_BLD}Admin${C_RST} link straight
+     away. Visit ${C_BLD}/ui/admin/${C_RST} for the operator panel.
+  5. After that first registration, edit ${C_BLD}${ENV_FILE}${C_RST} and
      blank out ${C_BLD}DEADMAN_BOOTSTRAP_ADMIN_EMAIL${C_RST}, then
      ${C_BLD}systemctl restart deadman-control${C_RST}. Bootstrap is
      idempotent (won't re-promote once an admin exists) but leaving the
      value lying around is unnecessary attack surface.
-  5. Read ${C_BLD}docs/self-hosting.md${C_RST} sections "Day 2 hardening" and
+  6. Read ${C_BLD}docs/self-hosting.md${C_RST} sections "Day 2 hardening" and
      "Hardening: interactive vault unlock" before letting anyone real
      depend on this instance.
-  6. ${C_BLD}Install the watchdog${C_RST} on a SEPARATE host:
+  7. ${C_BLD}Install the watchdog${C_RST} on a SEPARATE host:
      ${C_BLD}sudo ./scripts/setup-watchdog.sh${C_RST} (run from the repo on
      that other host). Without it, a stuck scheduler is silent.
-  7. Read ${C_BLD}docs/operator-risks.md${C_RST} if you intend to invite
+  8. Read ${C_BLD}docs/operator-risks.md${C_RST} if you intend to invite
      anyone outside your household to use this instance.
 
   ${C_BLD}If anything is wrong:${C_RST}
@@ -824,6 +858,7 @@ EOF
   install_logrotate
   configure_firewall
   start_service_and_capture_share3
+  verify_service_healthy
   print_final_report
 }
 

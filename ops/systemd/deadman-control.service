@@ -1,6 +1,6 @@
 [Unit]
 Description=Deadman control plane (zero-knowledge deadman's switch server)
-Documentation=https://github.com/your-org/deadman/blob/main/docs/self-hosting.md
+Documentation=https://github.com/clanker-built/deadman/blob/main/docs/self-hosting.md
 After=network-online.target docker.service
 Wants=network-online.target
 Requires=docker.service
