@@ -20,11 +20,11 @@
   <p><strong>Account:</strong> {{.UserEmail}}</p>
   <p><strong>Type:</strong> Time-based (TOTP), 6 digits, 30-second period, SHA-1</p>
   <p><strong>Setup key:</strong>
-    <code style="font-size:1.1em; user-select:all">{{.TOTPSecret}}</code>
+    <code class="totp-secret">{{.TOTPSecret}}</code>
   </p>
   <details>
     <summary>otpauth:// URL (for apps that paste a URL)</summary>
-    <p><code style="word-break:break-all; user-select:all">{{.TOTPURI}}</code></p>
+    <p><code class="totp-uri">{{.TOTPURI}}</code></p>
   </details>
 
   <h2>2. Save your recovery codes</h2>
@@ -33,7 +33,7 @@
     with one code and then set up a new authenticator. <strong>Save them now —
     they will not be shown again.</strong>
   </p>
-  <ul style="font-family:monospace; font-size:1.05em; user-select:all; padding-left:1em">
+  <ul class="recovery-codes">
     {{range .RecoveryCodes}}<li>{{.}}</li>{{end}}
   </ul>
 

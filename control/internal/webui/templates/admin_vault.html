@@ -34,7 +34,7 @@
            until you unlock again. Useful before a scheduled maintenance
            window or if you suspect the host has been compromised.</p>
         <form method="POST" action="/ui/admin/vault/lock">
-        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
           <button type="submit" class="danger">Lock now</button>
         </form>
       {{else}}
@@ -45,7 +45,7 @@
           the host is under attack.
         </p>
         <form method="POST" action="/ui/admin/vault/unlock">
-        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
           <label>
             Passphrase A (custodian A)
             <input type="password" name="passphrase_a" autocomplete="off" required>

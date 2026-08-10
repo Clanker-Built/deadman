@@ -35,12 +35,12 @@
         <td>
           {{if eq .State "suspended"}}
             <form method="POST" action="/ui/admin/policies/{{.ID}}/resume" class="inline">
-        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
               <button type="submit">Resume</button>
             </form>
           {{else}}
             <form method="POST" action="/ui/admin/policies/{{.ID}}/suspend" class="inline">
-        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
               <button type="submit" class="danger">Suspend</button>
             </form>
           {{end}}

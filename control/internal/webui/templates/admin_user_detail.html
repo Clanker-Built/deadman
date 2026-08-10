@@ -29,21 +29,21 @@
   <div class="action-row">
     {{if .IsAdmin}}
       <form method="POST" action="/ui/admin/users/{{.ID}}/demote" class="inline">
-        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
         <button type="submit">Demote from admin</button>
       </form>
     {{else}}
       <form method="POST" action="/ui/admin/users/{{.ID}}/promote" class="inline">
-        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
         <button type="submit">Promote to admin</button>
       </form>
     {{end}}
     <form method="POST" action="/ui/admin/users/{{.ID}}/force-logout" class="inline">
-        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
       <button type="submit">Force logout (revoke all sessions)</button>
     </form>
     <form method="POST" action="/ui/admin/users/{{.ID}}/suspend-all" class="inline">
-        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
       <button type="submit" class="danger">Suspend all armed policies</button>
     </form>
   </div>
